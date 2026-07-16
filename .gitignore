@@ -10,6 +10,9 @@ __pycache__/
 node_modules/
 dist/
 build/
+*.tsbuildinfo
+*.d.ts
+vite.config.js
 *.sqlite3
 *.log
 coverage/
