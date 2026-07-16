@@ -1,0 +1,3 @@
+{
+  "runbook": "Cart service high error rate: 1) Check Redis connection pool. 2) If checkout failures > 30 and Redis latency high, scale Redis and restart cart workers. 3) Do NOT restart the database."
+}

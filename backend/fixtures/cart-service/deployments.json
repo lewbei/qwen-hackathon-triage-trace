@@ -1,0 +1,6 @@
+{
+  "last_deployments": [
+    {"version": "cart-2.3.1", "time": "2026-07-15T14:00:00Z", "status": "rolled_back"},
+    {"version": "cart-2.3.0", "time": "2026-07-14T09:30:00Z", "status": "stable"}
+  ]
+}

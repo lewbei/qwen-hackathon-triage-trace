@@ -1,0 +1,3 @@
+{
+  "runbook": "Payment service: verify external PSP connectivity before any restart. If PSP is down, fail open to async queue and alert finance."
+}

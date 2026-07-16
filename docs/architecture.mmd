@@ -1,0 +1,10 @@
+flowchart LR
+    U[Judge / Operator] --> UI[React Dashboard on Alibaba ECS]
+    UI --> API[FastAPI Agent Orchestrator]
+    API --> Q[Qwen Cloud<br/>qwen3.7-plus / qwen3.6-flash]
+    API --> T[Metrics, Deployment and Runbook Tools]
+    API --> M[Temporal Memory Firewall]
+    M --> E[Qwen Embedding and Rerank]
+    M --> DB[ApsaraDB RDS PostgreSQL + pgvector]
+    API --> H[Human Approval Gate]
+    H --> X[Allowlisted Simulation Executor]
