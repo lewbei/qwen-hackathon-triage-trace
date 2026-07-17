@@ -52,6 +52,23 @@ class RunOut(BaseModel):
     alert: Alert
     events: list[RunEvent]
     proposal: ActionProposal | None = None
+    status: str = "running"
+    decision: dict[str, Any] | None = None
+
+
+class RunRecord(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: UUID
+    tenant: str
+    mode: str
+    alert: dict[str, Any]
+    proposal: dict[str, Any] | None = None
+    decision: dict[str, Any] | None = None
+    events: list[dict[str, Any]]
+    status: str
+    created_at: datetime
+    updated_at: datetime
 
 
 class DecisionIn(BaseModel):

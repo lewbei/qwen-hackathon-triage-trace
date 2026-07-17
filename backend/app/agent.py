@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.config import settings
-from backend.app.memory import pack_memories, search_memories
+from backend.app.memory import retrieve_and_pack
 from backend.app.models import MemoryRecord
 from backend.app.qwen import qwen
 from backend.app.schemas import ActionProposal, Alert, Mode, RunEvent
@@ -60,16 +60,14 @@ async def run_incident(
         except Exception as e:
             events.append(_event(run_id, "memory.embed_failed", {"error": str(e)}))
 
-        memories = await search_memories(
+        packed, omitted, rejected, pack_meta = await retrieve_and_pack(
             db,
             tenant=alert.tenant,
             scope=alert.service,
+            query_text=f"{alert.service} {alert.symptom} {alert.context}",
             query_embedding=query_embedding,
-            limit=30,
+            budget=settings.memory_token_budget,
         )
-        events.append(_event(run_id, "memory.retrieved", {"count": len(memories)}))
-
-        packed, omitted, rejected = pack_memories(memories, budget=settings.memory_token_budget)
         recalled_ids = [str(m.id) for m in packed]
         events.append(_event(
             run_id,
@@ -78,7 +76,7 @@ async def run_incident(
                 "packed": recalled_ids,
                 "omitted": [str(m.id) for m in omitted],
                 "rejected": [str(m.id) for m in rejected],
-                "budget": settings.memory_token_budget,
+                **pack_meta,
             },
         ))
 

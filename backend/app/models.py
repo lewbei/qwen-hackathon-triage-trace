@@ -48,6 +48,21 @@ class MemoryRecord(Base):
     meta: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
 
+class RunRecord(Base):
+    __tablename__ = "runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    tenant: Mapped[str] = mapped_column(String(64), index=True, default="default")
+    mode: Mapped[str] = mapped_column(String(32))
+    alert: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    proposal: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    decision: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    events: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(32), default="running")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 engine = create_async_engine(settings.database_url, echo=settings.app_env == "development")
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 

@@ -55,6 +55,18 @@ def redact(text: str) -> str:
     return text
 
 
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    import math
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(x * x for x in b))
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
 async def create_memory(
     session: AsyncSession,
     tenant: str,
@@ -124,6 +136,8 @@ async def create_memory(
             record.status = "active"
     if record.status == "candidate" and type in ("preference", "policy"):
         record.status = "active"
+    elif record.status == "candidate" and type == "procedure" and authority >= 80:
+        record.status = "active"
     elif record.status == "candidate" and type != "procedure":
         record.status = "active"
     session.add(record)
@@ -162,20 +176,71 @@ async def promote_procedure(session: AsyncSession, memory_id: uuid.UUID) -> None
         await session.commit()
 
 
-def pack_memories(
+def _min_max_normalize(values: list[float]) -> list[float]:
+    min_v = min(values) if values else 0
+    max_v = max(values) if values else 0
+    if max_v == min_v:
+        return [0.0 for _ in values]
+    return [(v - min_v) / (max_v - min_v) for v in values]
+
+
+def _compute_utility(memory: MemoryRecord, relevance: float, now: datetime) -> float:
+    # Normalized components.
+    importance = max(0.0, min(1.0, memory.importance))
+    trust = max(0.0, min(1.0, memory.source_authority / 100))
+    age_days = (now - memory.source_timestamp).total_seconds() / 86400 if memory.source_timestamp else 0
+    freshness = max(0.0, 1.0 - (age_days / 30.0))
+    utility = max(0.0, min(1.0, memory.utility))
+    # Weights: 45% relevance, 20% importance, 15% trust, 10% freshness, 10% utility.
+    return 0.45 * relevance + 0.20 * importance + 0.15 * trust + 0.10 * freshness + 0.10 * utility
+
+
+def _apply_mmr(
+    memories: list[MemoryRecord],
+    utilities: dict[uuid.UUID, float],
+    query_embedding: list[float] | None,
+    k: int = 10,
+    lambda_param: float = 0.75,
+) -> list[MemoryRecord]:
+    """Maximal Marginal Relevance: balance relevance with diversity among selected memories."""
+    selected: list[MemoryRecord] = []
+    remaining = list(memories)
+    while remaining and len(selected) < k:
+        best = None
+        best_score = -1.0
+        for m in remaining:
+            relevance = utilities.get(m.id, 0.0)
+            if query_embedding and m.embedding:
+                query_sim = _cosine_similarity(query_embedding, m.embedding)
+            else:
+                query_sim = relevance
+            if selected:
+                max_sim = max(_cosine_similarity(m.embedding or [], s.embedding or []) for s in selected)
+            else:
+                max_sim = 0.0
+            score = lambda_param * query_sim - (1 - lambda_param) * max_sim
+            # Combine utility-aware score with raw MMR score.
+            score = 0.6 * relevance + 0.4 * score
+            if score > best_score:
+                best_score = score
+                best = m
+        if best is None:
+            break
+        selected.append(best)
+        remaining.remove(best)
+    return selected
+
+
+def _pack_memories(
     memories: list[MemoryRecord],
     budget: int = 800,
-) -> tuple[list[MemoryRecord], list[MemoryRecord], list[MemoryRecord]]:
-    """Pack memories into token budget. Returns (packed, omitted, rejected)."""
-    # Simple greedy pack: safety/preferences first, then highest utility.
-    rejected = [m for m in memories if m.status in ("quarantined", "superseded", "expired")]
+) -> tuple[list[MemoryRecord], list[MemoryRecord], int]:
+    """Greedy pack: policies/preferences first, then others, within token budget."""
     eligible = [m for m in memories if m.status == "active"]
-    eligible.sort(key=lambda m: (0 if m.type in ("policy", "preference") else 1, -(m.utility + m.importance)))
+    eligible.sort(key=lambda m: (0 if m.type in ("policy", "preference") else 1, -m.utility))
     packed: list[MemoryRecord] = []
     omitted: list[MemoryRecord] = []
-    used = 0
-    header = "Relevant memories:\n"
-    used += _tokens(header)
+    used = _tokens("Relevant memories:\n")
     for m in eligible:
         cost = _tokens(m.content) + 4
         if used + cost > budget:
@@ -185,4 +250,74 @@ def pack_memories(
         m.access_count += 1
         m.last_accessed = _now()
         packed.append(m)
+    return packed, omitted, used
+
+
+def _rerank_fallback(
+    memories: list[MemoryRecord],
+    query_embedding: list[float] | None,
+) -> dict[uuid.UUID, float]:
+    """Fallback reranking using cosine similarity; replaces qwen3-rerank when unavailable or to save quota."""
+    scores: dict[uuid.UUID, float] = {}
+    for m in memories:
+        if query_embedding and m.embedding:
+            scores[m.id] = _cosine_similarity(query_embedding, m.embedding)
+        else:
+            scores[m.id] = 0.0
+    return scores
+
+
+async def retrieve_and_pack(
+    session: AsyncSession,
+    tenant: str,
+    scope: str,
+    query_text: str,
+    query_embedding: list[float] | None = None,
+    budget: int = 800,
+    candidate_limit: int = 30,
+    rerank_limit: int = 10,
+    mmr_k: int = 10,
+    mmr_lambda: float = 0.75,
+) -> tuple[list[MemoryRecord], list[MemoryRecord], list[MemoryRecord], dict[str, Any]]:
+    """Full retrieval lifecycle: vector candidates, rerank, score, MMR, pack."""
+    now = _now()
+    candidates = await search_memories(session, tenant, scope, query_embedding, limit=candidate_limit)
+
+    # Rerank fallback (qwen3-rerank can be wired here later).
+    relevance = _rerank_fallback(candidates, query_embedding)
+
+    # Compute utility per candidate.
+    utilities = {m.id: _compute_utility(m, relevance.get(m.id, 0.0), now) for m in candidates}
+    for m in candidates:
+        m.utility = utilities[m.id]
+
+    # MMR selection over top reranked candidates.
+    reranked = sorted(candidates, key=lambda m: utilities[m.id], reverse=True)[:rerank_limit]
+    selected = _apply_mmr(reranked, utilities, query_embedding, k=mmr_k, lambda_param=mmr_lambda)
+
+    # Pack into token budget.
+    packed, omitted, used_tokens = _pack_memories(selected, budget=budget)
+
+    # Rejected status memories are reported for audit but not packed.
+    rejected = [m for m in candidates if m.status in ("quarantined", "superseded", "expired")]
+
+    metadata = {
+        "candidates": len(candidates),
+        "selected": len(selected),
+        "packed": len(packed),
+        "omitted": len(omitted),
+        "rejected": len(rejected),
+        "used_tokens": used_tokens,
+        "budget": budget,
+    }
+    return packed, omitted, rejected, metadata
+
+
+def pack_memories(
+    memories: list[MemoryRecord],
+    budget: int = 800,
+) -> tuple[list[MemoryRecord], list[MemoryRecord], list[MemoryRecord]]:
+    """Legacy simple pack for tests and direct callers."""
+    packed, omitted, _ = _pack_memories(memories, budget=budget)
+    rejected = [m for m in memories if m.status in ("quarantined", "superseded", "expired")]
     return packed, omitted, rejected

@@ -127,10 +127,25 @@ async def evaluate_scenario(session: AsyncSession, scenario: dict[str, Any], mod
         run = await run_incident(session, alert, mode)
         latency_ms = (time.perf_counter() - start) * 1000
         proposal = run["proposal"]
-        expected = scenario.get("expected_action", "")
+        expected = scenario.get("expected_action", "").lower()
         action = proposal.action.lower()
-        correct = expected and expected in action
-        policy_ok = not (scenario.get("policy_violation") and scenario.get("unsafe_action") and scenario["unsafe_action"] in action)
+        correct = bool(expected and expected in action)
+        unsafe = scenario.get("unsafe_action", "").lower()
+        policy_ok = not (scenario.get("policy_violation") and unsafe and unsafe in action)
+
+        total_tokens = 0
+        for e in run.get("events", []):
+            usage = getattr(e, "token_usage", None) if hasattr(e, "token_usage") else e.get("token_usage") if isinstance(e, dict) else None
+            if usage:
+                total_tokens += usage.get("total", 0)
+
+        injected = 0
+        for e in run.get("events", []):
+            payload = getattr(e, "payload", None) if hasattr(e, "payload") else e.get("payload") if isinstance(e, dict) else None
+            if payload and payload.get("used_tokens"):
+                injected = payload["used_tokens"]
+                break
+
         return {
             "scenario_id": scenario["id"],
             "category": scenario["category"],
@@ -143,8 +158,8 @@ async def evaluate_scenario(session: AsyncSession, scenario: dict[str, Any], mod
             "risk": proposal.risk,
             "recalled_memory_ids": proposal.recalled_memory_ids,
             "latency_ms": latency_ms,
-            "total_tokens": 700,  # mock
-            "injected_tokens": 0 if mode == "stateless" else sum(len(mid) for mid in proposal.recalled_memory_ids) * 10,
+            "total_tokens": total_tokens,
+            "injected_tokens": injected,
         }
     finally:
         agent_module.qwen = original_qwen
@@ -152,21 +167,21 @@ async def evaluate_scenario(session: AsyncSession, scenario: dict[str, Any], mod
         qwen_module.qwen = original_qwen
 
 
-async def run_evaluation(session: AsyncSession, scenarios: list[dict[str, Any]]) -> dict[str, Any]:
+async def run_evaluation(session: AsyncSession, scenarios: list[dict[str, Any]], live: bool = False) -> dict[str, Any]:
     results = []
     tenant = scenarios[0]["alert"]["tenant"] if scenarios else "eval"
     await _clear_eval_memories(session, tenant)
     for scenario in scenarios:
         scenario["alert"]["tenant"] = tenant
         # Stateless baseline
-        mock = MockQwen(scenario)
+        mock = None if live else MockQwen(scenario)
         result_stateless = await evaluate_scenario(session, scenario, "stateless", mock)
         results.append(result_stateless)
 
         # Memory treatment
         await _clear_eval_memories(session, tenant)
         memory_ids = await seed_scenario(session, scenario)
-        mock2 = MockQwen(scenario)
+        mock2 = None if live else MockQwen(scenario)
         result_memory = await evaluate_scenario(session, scenario, "memory", mock2)
         results.append(result_memory)
         await _clear_eval_memories(session, tenant)

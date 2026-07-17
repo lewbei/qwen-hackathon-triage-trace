@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from backend.app.main import RUN_STORE, app
+from backend.app.main import app
 
 
 async def _fake_qwen_chat(*, messages, tools=None, tool_choice=None, temperature=0.2, max_tokens=1024, **kwargs):
@@ -41,7 +41,6 @@ async def _fake_qwen_chat(*, messages, tools=None, tool_choice=None, temperature
 
 @pytest.mark.asyncio
 async def test_approved_run_creates_memory(db_session):
-    RUN_STORE.clear()
     with patch("backend.app.agent.qwen") as mock_qwen:
         mock_qwen.chat = AsyncMock(side_effect=_fake_qwen_chat)
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
