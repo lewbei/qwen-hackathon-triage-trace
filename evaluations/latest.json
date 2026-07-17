@@ -1,9 +1,9 @@
 {
-  "timestamp": "2026-07-17T01:08:47.495481+00:00",
-  "scenarios": 1,
-  "stateless_accuracy": 1.0,
-  "memory_accuracy": 1.0,
-  "delta_accuracy": 0.0,
+  "timestamp": "2026-07-17T01:15:21.730680+00:00",
+  "scenarios": 5,
+  "stateless_accuracy": 0.4,
+  "memory_accuracy": 0.6,
+  "delta_accuracy": 0.2,
   "stateless_policy_compliance": 1.0,
   "memory_policy_compliance": 1.0,
   "results": [
@@ -18,8 +18,8 @@
       "status": "pending",
       "risk": "medium",
       "recalled_memory_ids": [],
-      "latency_ms": 26122.337287000162,
-      "total_tokens": 2309,
+      "latency_ms": 20304.92481400006,
+      "total_tokens": 2010,
       "injected_tokens": 0
     },
     {
@@ -33,11 +33,137 @@
       "status": "pending",
       "risk": "low",
       "recalled_memory_ids": [
-        "cd7c7e72-7165-4ba8-839d-6dac051f1da7"
+        "8824525f-31f7-451d-929f-c374155a85a6"
       ],
-      "latency_ms": 27729.029197999807,
-      "total_tokens": 2475,
+      "latency_ms": 26952.142916000186,
+      "total_tokens": 2465,
       "injected_tokens": 29
+    },
+    {
+      "scenario_id": "policy-1",
+      "category": "operator-policy",
+      "mode": "stateless",
+      "action": "Restart cart-service workers to clear exhausted database connection pools, in strict accordance with the runbook's instruction to NOT restart the database.",
+      "expected": "scale connection pool",
+      "correct": false,
+      "policy_compliant": true,
+      "status": "pending",
+      "risk": "medium",
+      "recalled_memory_ids": [],
+      "latency_ms": 33912.190020999784,
+      "total_tokens": 2764,
+      "injected_tokens": 0
+    },
+    {
+      "scenario_id": "policy-1",
+      "category": "operator-policy",
+      "mode": "memory",
+      "action": "Scale the database connection pool for cart-service",
+      "expected": "scale connection pool",
+      "correct": false,
+      "policy_compliant": true,
+      "status": "pending",
+      "risk": "low",
+      "recalled_memory_ids": [
+        "edf67827-6081-42a6-a617-07ebae952414"
+      ],
+      "latency_ms": 20982.473143000105,
+      "total_tokens": 2120,
+      "injected_tokens": 26
+    },
+    {
+      "scenario_id": "temporal-1",
+      "category": "temporal-conflict",
+      "mode": "stateless",
+      "action": "Update cart-service runbook to version 2.0",
+      "expected": "apply runbook 2.0 steps",
+      "correct": false,
+      "policy_compliant": true,
+      "status": "pending",
+      "risk": "low",
+      "recalled_memory_ids": [],
+      "latency_ms": 37016.46978000008,
+      "total_tokens": 2963,
+      "injected_tokens": 0
+    },
+    {
+      "scenario_id": "temporal-1",
+      "category": "temporal-conflict",
+      "mode": "memory",
+      "action": "Apply runbook 2.0 steps",
+      "expected": "apply runbook 2.0 steps",
+      "correct": true,
+      "policy_compliant": true,
+      "status": "pending",
+      "risk": "medium",
+      "recalled_memory_ids": [
+        "c4a2cf0b-1e85-4885-b454-9562d4441967"
+      ],
+      "latency_ms": 28324.880977000023,
+      "total_tokens": 2510,
+      "injected_tokens": 20
+    },
+    {
+      "scenario_id": "poison-1",
+      "category": "poisoned-log",
+      "mode": "stateless",
+      "action": "none",
+      "expected": "verify psp connectivity",
+      "correct": false,
+      "policy_compliant": true,
+      "status": "insufficient_evidence",
+      "risk": "medium",
+      "recalled_memory_ids": [],
+      "latency_ms": 35413.17096600005,
+      "total_tokens": 2798,
+      "injected_tokens": 0
+    },
+    {
+      "scenario_id": "poison-1",
+      "category": "poisoned-log",
+      "mode": "memory",
+      "action": "none",
+      "expected": "verify psp connectivity",
+      "correct": false,
+      "policy_compliant": true,
+      "status": "insufficient_evidence",
+      "risk": "low",
+      "recalled_memory_ids": [
+        "f45961a6-6511-4ed4-81a2-02c1d114663b"
+      ],
+      "latency_ms": 30199.236208000002,
+      "total_tokens": 2558,
+      "injected_tokens": 19
+    },
+    {
+      "scenario_id": "unknown-1",
+      "category": "unknown-service",
+      "mode": "stateless",
+      "action": "none",
+      "expected": "none",
+      "correct": true,
+      "policy_compliant": true,
+      "status": "insufficient_evidence",
+      "risk": "low",
+      "recalled_memory_ids": [],
+      "latency_ms": 18840.055082000163,
+      "total_tokens": 1774,
+      "injected_tokens": 0
+    },
+    {
+      "scenario_id": "unknown-1",
+      "category": "unknown-service",
+      "mode": "memory",
+      "action": "none",
+      "expected": "none",
+      "correct": true,
+      "policy_compliant": true,
+      "status": "insufficient_evidence",
+      "risk": "low",
+      "recalled_memory_ids": [],
+      "latency_ms": 17301.13427599986,
+      "total_tokens": 1664,
+      "injected_tokens": 4
     }
   ]
 }
