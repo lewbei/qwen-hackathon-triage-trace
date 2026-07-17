@@ -16,6 +16,7 @@ from backend.app.agent import run_incident
 from backend.app.demo import run_winning_scenario
 from backend.app.config import settings
 from backend.app.memory import create_memory, get_memory_lineage
+from backend.app.simulate import simulate_action
 from backend.app.models import AsyncSessionLocal, MemoryRecord, RunRecord, get_db
 from backend.app.schemas import (
     ActionProposal,
@@ -171,26 +172,82 @@ async def decide(run_id: str, decision: DecisionIn, db: AsyncSession = Depends(g
         raise HTTPException(status_code=404, detail="Proposal not found")
     proposal = ActionProposal(**record.proposal)
     alert = Alert(**record.alert)
-    record.decision = {"approved": decision.approved, "feedback": decision.feedback}
-    if decision.approved:
-        proposal.status = "approved"
-        record.status = "approved"
+
+    # Try to use the metrics the agent actually observed during the run.
+    observed_metrics: dict[str, Any] | None = None
+    for ev in record.events or []:
+        payload = ev.get("payload") or {}
+        if ev.get("event_type") == "tools.called" and isinstance(payload, dict):
+            for result in payload.get("results", []):
+                if result.get("tool") == "inspect_metrics" and isinstance(result.get("result"), dict):
+                    observed_metrics = result["result"]
+                    break
+            if observed_metrics:
+                break
+
+    outcome = simulate_action(proposal.service, proposal.action, observed_metrics)
+    record.decision = {
+        "approved": decision.approved,
+        "feedback": decision.feedback,
+        "outcome": outcome,
+    }
+
+    if decision.approved and outcome["improved"]:
+        proposal.status = "validated"
+        record.status = "validated"
         memory = await create_memory(
             db,
             tenant=record.tenant,
-            provenance="approved_execution",
+            provenance="validated_execution",
             type="procedure",
             scope=proposal.service,
             subject=alert.symptom,
             predicate="remediation",
-            content=f"Approved procedure: {proposal.action}. Evidence: {proposal.evidence}. Operator feedback: {decision.feedback}",
-            source_authority=80,
+            content=f"Validated procedure: {proposal.action}. Evidence: {proposal.evidence}. Simulated outcome: {outcome['reasoning']} (delta {outcome['delta']:+}). Operator feedback: {decision.feedback}",
+            source_authority=90,
             auto_embed=True,
         )
         memory.status = "active"
         record.proposal = proposal.model_dump()
         await db.commit()
-        return {"run_id": run_id, "approved": True, "feedback": decision.feedback, "status": "approved", "memory_id": str(memory.id)}
+        return {
+            "run_id": run_id,
+            "approved": True,
+            "validated": True,
+            "feedback": decision.feedback,
+            "status": "validated",
+            "memory_id": str(memory.id),
+            "outcome": outcome,
+        }
+
+    # If the operator approved but the simulated outcome does not improve, reject the
+    # action and record a negative preference so the agent learns to avoid it.
+    if decision.approved:
+        proposal.status = "rejected_by_simulation"
+        record.status = "rejected_by_simulation"
+        await create_memory(
+            db,
+            tenant=record.tenant,
+            provenance="failed_execution",
+            type="preference",
+            scope=proposal.service,
+            subject=alert.symptom,
+            predicate="avoid",
+            content=f"Avoid action: {proposal.action}. Simulated outcome: {outcome['reasoning']} (delta {outcome['delta']:+}). Operator feedback: {decision.feedback}",
+            source_authority=95,
+            auto_embed=True,
+        )
+        record.proposal = proposal.model_dump()
+        await db.commit()
+        return {
+            "run_id": run_id,
+            "approved": False,
+            "validated": False,
+            "feedback": decision.feedback,
+            "status": "rejected_by_simulation",
+            "outcome": outcome,
+        }
+
     proposal.status = "rejected"
     record.status = "rejected"
     await create_memory(
@@ -207,7 +264,14 @@ async def decide(run_id: str, decision: DecisionIn, db: AsyncSession = Depends(g
     )
     record.proposal = proposal.model_dump()
     await db.commit()
-    return {"run_id": run_id, "approved": False, "feedback": decision.feedback, "status": "rejected"}
+    return {
+        "run_id": run_id,
+        "approved": False,
+        "validated": False,
+        "feedback": decision.feedback,
+        "status": "rejected",
+        "outcome": outcome,
+    }
 
 
 @app.get("/api/skills")

@@ -45,6 +45,16 @@ interface PackMeta {
   selected?: number
 }
 
+interface Outcome {
+  before_metrics: Record<string, number>
+  after_metrics: Record<string, number>
+  before_score: number
+  after_score: number
+  delta: number
+  improved: boolean
+  reasoning: string
+}
+
 function formatEvent(e: Event): string {
   const parts = [`[${e.event_type}]`]
   if (e.model) parts.push(`model=${e.model}`)
@@ -71,6 +81,7 @@ function App() {
   const [memories, setMemories] = useState<Memory[]>([])
   const [feedback, setFeedback] = useState('')
   const [packMeta, setPackMeta] = useState<PackMeta | null>(null)
+  const [outcome, setOutcome] = useState<Outcome | null>(null)
 
   const loadMemories = async () => {
     const res = await fetch('/api/memories?tenant=default')
@@ -86,6 +97,7 @@ function App() {
       setEvents([])
       setRunId(null)
       setPackMeta(null)
+      setOutcome(null)
     }
     setLoading(false)
   }
@@ -100,6 +112,7 @@ function App() {
     setEvents([])
     setRunId(null)
     setPackMeta(null)
+    setOutcome(null)
     try {
       const res = await fetch(`/api/agent/runs?mode=${mode}`, {
         method: 'POST',
@@ -139,6 +152,7 @@ function App() {
     if (res.ok) {
       const data = await res.json()
       setResult((r) => (r ? { ...r, status: data.status } : r))
+      setOutcome(data.outcome || null)
       await loadMemories()
     }
   }
@@ -193,6 +207,25 @@ function App() {
                   </div>
                   <div className="text-xs text-gray-600 mt-1">
                     candidates={packMeta.candidates ?? '?'} selected={packMeta.selected ?? '?'} packed={packMeta.packed.length} omitted={packMeta.omitted.length} rejected={packMeta.rejected.length}
+                  </div>
+                </div>
+              )}
+              {outcome && (
+                <div className="mt-4 border rounded p-3 bg-gray-50">
+                  <h3 className="font-semibold text-sm mb-1">Simulated outcome</h3>
+                  <p className={`text-sm font-semibold ${outcome.improved ? 'text-green-700' : 'text-red-700'}`}>
+                    {outcome.improved ? 'Validated — metrics improve' : 'Rejected — metrics worsen'}
+                  </p>
+                  <p className="text-xs text-gray-600 mb-2">{outcome.reasoning}</p>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <p className="font-semibold">Before score</p>
+                      <p>{outcome.before_score}</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold">After score</p>
+                      <p>{outcome.after_score} ({outcome.delta >= 0 ? '+' : ''}{outcome.delta})</p>
+                    </div>
                   </div>
                 </div>
               )}
