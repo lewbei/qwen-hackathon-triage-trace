@@ -68,8 +68,11 @@ async def create_memory(
     valid_from: datetime | None = None,
     embedding: list[float] | None = None,
     meta: dict[str, Any] | None = None,
+    auto_embed: bool = False,
 ) -> MemoryRecord:
     content = redact(content)
+    if embedding is None and auto_embed:
+        embedding = (await qwen.embed([content], dimensions=1536))[0]
     authority = source_authority if source_authority is not None else AUTHORITY.get(provenance, 0)
     valid = valid_from or _now()
     expires = _compute_expires_at(type, valid)

@@ -91,11 +91,12 @@ class QwenGateway:
                 return json.loads(text[start : end + 1])
             raise
 
-    async def embed(self, texts: list[str]) -> list[list[float]]:
+    async def embed(self, texts: list[str], dimensions: int = 1536) -> list[list[float]]:
         self._ensure_key()
         response = await self.client.embeddings.create(
             input=texts,
             model=settings.qwen_embedding_model,
+            dimensions=dimensions,
         )
         return [item.embedding for item in response.data]
 

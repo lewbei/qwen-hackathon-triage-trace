@@ -5,7 +5,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env")
 
     qwen_api_key: str = ""
-    qwen_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    qwen_base_url: str = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
     qwen_reasoning_model: str = "qwen3.7-plus"
     qwen_extraction_model: str = "qwen3.6-flash"
     qwen_embedding_model: str = "text-embedding-v4"

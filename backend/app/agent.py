@@ -54,7 +54,7 @@ async def run_incident(
         # Use a naive embedding (empty) for now; replaced by real embedding when QWEN_API_KEY set.
         query_embedding = None
         try:
-            embeddings = await qwen.embed([f"{alert.service} {alert.symptom} {alert.context}"])
+            embeddings = await qwen.embed([f"{alert.service} {alert.symptom} {alert.context}"], dimensions=1536)
             query_embedding = embeddings[0]
             events.append(_event(run_id, "memory.embedded", {"dim": len(query_embedding)}))
         except Exception as e:
@@ -139,7 +139,11 @@ async def run_incident(
 
     messages.append({
         "role": "system",
-        "content": "Now produce a final JSON ActionProposal using the schema provided. If insufficient evidence, set action to 'none' and insufficient_evidence to true.",
+        "content": (
+            "Now produce a final JSON ActionProposal. "
+            "You must include these exact fields: action (string), service (string), evidence (string), risk (low/medium/high), approval_required (boolean), insufficient_evidence (boolean). "
+            "If insufficient evidence, set action to 'none' and insufficient_evidence to true."
+        ),
     })
 
     second = await qwen.chat(messages=messages, temperature=0.0, max_tokens=2048)
@@ -171,6 +175,13 @@ async def run_incident(
                 "approval_required": True,
                 "insufficient_evidence": True,
             }
+
+    # Ensure required fields exist with sensible defaults.
+    parsed.setdefault("service", alert.service)
+    parsed.setdefault("evidence", "No evidence provided.")
+    parsed.setdefault("risk", "medium")
+    parsed.setdefault("approval_required", True)
+    parsed.setdefault("insufficient_evidence", False)
 
     if parsed.get("insufficient_evidence"):
         parsed["action"] = "none"

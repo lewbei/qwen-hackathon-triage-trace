@@ -55,6 +55,7 @@ async def decide(run_id: str, decision: DecisionIn, db: AsyncSession = Depends(g
             predicate="remediation",
             content=f"Approved procedure: {proposal.action}. Evidence: {proposal.evidence}. Operator feedback: {decision.feedback}",
             source_authority=80,
+            auto_embed=True,
         )
         memory.status = "active"
         await db.commit()
@@ -70,6 +71,7 @@ async def decide(run_id: str, decision: DecisionIn, db: AsyncSession = Depends(g
         predicate="avoid",
         content=f"Rejected action: {proposal.action}. Operator feedback: {decision.feedback}",
         source_authority=100,
+        auto_embed=True,
     )
     return {"run_id": run_id, "approved": False, "feedback": decision.feedback, "status": "rejected"}
 
@@ -103,6 +105,7 @@ async def add_memory(
         subject=subject,
         predicate=predicate,
         content=content,
+        auto_embed=True,
     )
     return MemoryRecordSchema.model_validate(record)
 
