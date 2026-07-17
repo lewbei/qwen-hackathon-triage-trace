@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import WinningDemo from './WinningDemo'
 
 const SERVICES = ['cart-service', 'payment-service', 'notification-service', 'unknown-service']
 
@@ -145,9 +146,13 @@ function App() {
   return (
     <div className="min-h-screen bg-slate-50 p-8">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">TriageTrace</h1>
+        <div>
+          <h1 className="text-3xl font-bold">TriageTrace</h1>
+          <p className="text-sm text-gray-600">A temporal memory firewall for incident-response agents.</p>
+        </div>
         <button className="text-sm bg-slate-200 px-3 py-1 rounded" onClick={resetDemo} disabled={loading}>Reset Demo</button>
       </div>
+      <WinningDemo />
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white p-4 rounded shadow">
           <h2 className="font-semibold mb-2">Incident</h2>

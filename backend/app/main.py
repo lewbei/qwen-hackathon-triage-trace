@@ -13,6 +13,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.agent import run_incident
+from backend.app.demo import run_winning_scenario
 from backend.app.config import settings
 from backend.app.memory import create_memory, get_memory_lineage
 from backend.app.models import AsyncSessionLocal, MemoryRecord, RunRecord, get_db
@@ -338,3 +339,14 @@ async def demo_reset(
         seeded += await _seed_fixture(db, tenant, service)
     await db.commit()
     return {"status": "reset", "seeded": seeded}
+
+
+@app.post("/api/demo/winning-scenario")
+async def winning_scenario(
+    db: AsyncSession = Depends(get_db),
+    tenant: str = "demo",
+) -> dict[str, Any]:
+    """Run a controlled scenario demonstrating temporal supersession, poison quarantine,
+    and memory-based incident response. Not for production use.
+    """
+    return await run_winning_scenario(db, tenant=tenant)
