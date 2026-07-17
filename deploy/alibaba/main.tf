@@ -87,25 +87,29 @@ resource "alicloud_security_group_rule" "ui" {
 
 # RDS PostgreSQL with pgvector
 resource "alicloud_db_instance" "triagetrace" {
-  engine            = "PostgreSQL"
-  engine_version    = "15.0"
-  instance_type     = "Primary"
-  instance_class    = var.db_instance_class
-  instance_storage  = var.db_storage
-  vswitch_id        = alicloud_vswitch.triagetrace.id
-  security_ips      = [alicloud_vpc.triagetrace.cidr_block]
+  engine                   = "PostgreSQL"
+  engine_version           = "15.0"
+  instance_type            = var.db_instance_class
+  instance_storage         = var.db_storage
+  instance_charge_type     = "Postpaid"
+  category                 = "Basic"
+  db_instance_storage_type = "cloud_essd"
+  vswitch_id               = alicloud_vswitch.triagetrace.id
+  zone_id                  = var.zone_id
+  security_ips             = [var.vpc_cidr]
 }
 
 resource "alicloud_db_database" "triagetrace" {
   instance_id = alicloud_db_instance.triagetrace.id
   name        = "triagetrace"
-  character_set = "UTF8"
 }
 
-resource "alicloud_db_account" "triagetrace" {
+# Super account required to CREATE EXTENSION vector
+resource "alicloud_rds_account" "triagetrace" {
   db_instance_id   = alicloud_db_instance.triagetrace.id
   account_name     = var.db_user
   account_password = var.db_password
+  account_type     = "Super"
 }
 
 # ECS instance running backend + frontend

@@ -325,7 +325,9 @@ async def demo_reset(
     db: AsyncSession = Depends(get_db),
     x_demo_secret: str = Header(default=""),
 ) -> dict[str, Any]:
-    if settings.demo_secret and x_demo_secret != settings.demo_secret:
+    # In production, require the configured demo secret. In development/demo,
+    # reset is allowed without a secret so the quickstart and hackathon demo work.
+    if settings.app_env == "production" and (not settings.demo_secret or x_demo_secret != settings.demo_secret):
         raise HTTPException(status_code=403, detail="invalid demo secret")
     tenant = settings.default_tenant
     await db.execute(delete(MemoryRecord).where(MemoryRecord.tenant == tenant))
