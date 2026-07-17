@@ -28,6 +28,22 @@ For conflicting memories:
 
 Do not manually force statuses in demos or tests to manufacture the desired result.
 
+### Conflict decision table
+
+For two memories sharing tenant, scope, subject, and predicate:
+
+| incoming authority vs current | incoming timestamp vs current | result |
+|---|---|---|
+| higher | any | supersede current |
+| lower | any | quarantine (lower authority) |
+| equal | strictly newer | supersede current |
+| equal | older or equal | quarantine (stale or out-of-order) |
+| duplicate content | — | quarantine (duplicate) |
+
+### Concurrency
+
+`create_memory()` serializes writes for each `(tenant, scope, subject, predicate)` key using a PostgreSQL advisory transaction lock. This prevents simultaneous calls from both observing an empty active set and producing two active records. A residual race would require an additional partial unique index or serialization at a higher level and should be addressed only if load testing shows it.
+
 ## Trust and tenancy
 
 Trusted provenance may only be assigned by internal workflows.

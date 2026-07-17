@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import tiktoken
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.config import settings
@@ -232,10 +232,28 @@ async def create_memory(
         await session.refresh(record)
         return record
 
-    # Lifecycle: compare with active existing memories of same scope/subject.
-    # A record supersedes the current active memory only when it has higher
-    # authority, OR equal authority and a strictly newer source_timestamp.
-    # Out-of-order or equal-timestamp arrivals are quarantined as stale.
+    # Lifecycle: compare with active existing memories of the same
+    # tenant/scope/subject/predicate. The decision is based on source authority
+    # and source_timestamp, NOT insertion order.
+    #
+    # Conflict decision table (incoming vs current active):
+    #   incoming authority  > current authority      -> supersede
+    #   incoming authority  < current authority      -> quarantine (lower authority)
+    #   incoming authority == current authority:
+    #       incoming source_timestamp > current -> supersede
+    #       incoming source_timestamp <= current -> quarantine (stale or out-of-order)
+    #   duplicate content (any existing row)         -> quarantine (duplicate)
+    #
+    # Serialize concurrent writes for this exact key using a PostgreSQL
+    # advisory transaction lock. This prevents two simultaneous calls from both
+    # observing an empty active set and producing two active records, or from
+    # racing to supersede the same current memory. The lock is released on commit.
+    lock_key = f"{tenant}:{scope}:{subject}:{predicate}"
+    await session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
+        {"key": lock_key},
+    )
+
     existing = await session.execute(
         select(MemoryRecord).where(
             MemoryRecord.tenant == tenant,
@@ -248,7 +266,10 @@ async def create_memory(
     existing_rows = list(existing.scalars().all())
     if existing_rows:
         # The record to beat is the strongest active memory by (authority, timestamp).
-        strongest = max(existing_rows, key=lambda m: (m.source_authority, m.source_timestamp or _now()))
+        strongest = max(
+            existing_rows,
+            key=lambda m: (m.source_authority, m.source_timestamp or _now()),
+        )
         if any(o.content == record.content for o in existing_rows):
             record.status = "quarantined"
             record.meta["quarantine_reason"] = "duplicate"
