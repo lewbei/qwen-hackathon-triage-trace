@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +19,8 @@ async def apply_operator_decision(
     embedding: list[float] | None = None,
     subject: str | None = None,
     predicate: str = "remediation",
+    source_timestamp: datetime | None = None,
+    valid_from: datetime | None = None,
 ) -> dict[str, Any]:
     """Execute the post-approval simulation gate and persist the result.
 
@@ -49,8 +52,6 @@ async def apply_operator_decision(
 
     if approved and outcome["improved"]:
         # The simulator is only a predictive screen, not a real execution.
-        proposal.status = "simulated_safe"
-        run_record.status = "simulated_safe"
         memory = await create_memory(
             session,
             tenant=run_record.tenant,
@@ -63,16 +64,23 @@ async def apply_operator_decision(
             source_authority=80,
             embedding=embedding,
             auto_embed=embedding is None,
+            status="simulated_safe",
+            source_timestamp=source_timestamp,
+            valid_from=valid_from,
         )
-        memory.status = "simulated_safe"
+        # create_memory owns the final status. If the lifecycle rejected the
+        # memory (poison, duplicate, stale, lower authority, etc.), that status
+        # must be reflected in the decision response and not overwritten.
+        proposal.status = memory.status
+        run_record.status = memory.status
         run_record.proposal = proposal.model_dump()
         await session.commit()
         return {
             "run_id": str(run_record.id),
             "approved": True,
-            "simulated_safe": True,
+            "simulated_safe": memory.status == "simulated_safe",
             "feedback": feedback,
-            "status": "simulated_safe",
+            "status": memory.status,
             "memory_id": str(memory.id),
             "outcome": outcome,
         }

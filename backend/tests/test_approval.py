@@ -1,4 +1,5 @@
 import json
+import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -121,3 +122,127 @@ async def test_approved_run_rejected_by_bad_simulation(db_session):
     assert data["status"] == "rejected_by_simulation"
     assert data["simulated_safe"] is False
     assert data["outcome"]["improved"] is False
+
+
+@pytest.mark.asyncio
+async def test_lifecycle_rejection_overrides_decision_status(db_session):
+    """If create_memory rejects a duplicate, apply_operator_decision must not
+    resurrect the status to simulated_safe."""
+    from backend.app.decisions import apply_operator_decision
+    from backend.app.models import MemoryRecord, RunRecord
+    from backend.app.schemas import ActionProposal, Alert
+
+    tenant = "test-rejection-final"
+    alert = Alert(
+        tenant=tenant,
+        service="notification-service",
+        symptom="queue backlog",
+        context="workers cannot keep up",
+        severity="warning",
+    )
+    proposal = ActionProposal(
+        action="Scale workers and requeue messages",
+        service="notification-service",
+        evidence="drains backlog without dropping messages",
+        risk="low",
+        approval_required=True,
+        status="pending",
+        recalled_memory_ids=[],
+        insufficient_evidence=False,
+    )
+    run = RunRecord(
+        tenant=tenant,
+        mode="memory",
+        alert=alert.model_dump(),
+        proposal=proposal.model_dump(),
+        events=[],
+        status="running",
+    )
+    db_session.add(run)
+    await db_session.commit()
+
+    with patch("backend.app.memory.qwen.embed", new_callable=AsyncMock) as mock_embed:
+        mock_embed.return_value = [[0.0] * 1536]
+        first = await apply_operator_decision(db_session, run, approved=True, feedback="ok")
+    assert first["status"] == "simulated_safe"
+
+    run2 = RunRecord(
+        tenant=tenant,
+        mode="memory",
+        alert=alert.model_dump(),
+        proposal=proposal.model_dump(),
+        events=[],
+        status="running",
+    )
+    db_session.add(run2)
+    await db_session.commit()
+
+    with patch("backend.app.memory.qwen.embed", new_callable=AsyncMock) as mock_embed:
+        mock_embed.return_value = [[0.0] * 1536]
+        second = await apply_operator_decision(db_session, run2, approved=True, feedback="ok")
+
+    assert second["status"] == "quarantined"
+    assert second["simulated_safe"] is False
+    second_mem = await db_session.get(MemoryRecord, uuid.UUID(second["memory_id"]))
+    assert second_mem is not None
+    assert second_mem.status == "quarantined"
+    await db_session.refresh(run2)
+    assert run2.status == "quarantined"
+
+
+@pytest.mark.asyncio
+async def test_historical_timestamps_propagate_to_memory(db_session):
+    """Historical source_timestamp and valid_from supplied to the approval gate
+    must be stored and used to compute expires_at, not ignored."""
+    from datetime import datetime, timedelta, timezone
+    from backend.app.decisions import apply_operator_decision
+    from backend.app.models import MemoryRecord, RunRecord
+    from backend.app.schemas import ActionProposal, Alert
+
+    tenant = "test-historical-ttl"
+    alert = Alert(
+        tenant=tenant,
+        service="notification-service",
+        symptom="queue backlog",
+        context="workers cannot keep up",
+        severity="warning",
+    )
+    proposal = ActionProposal(
+        action="Scale workers and requeue messages",
+        service="notification-service",
+        evidence="drains backlog without dropping messages",
+        risk="low",
+        approval_required=True,
+        status="pending",
+        recalled_memory_ids=[],
+        insufficient_evidence=False,
+    )
+    run = RunRecord(
+        tenant=tenant,
+        mode="memory",
+        alert=alert.model_dump(),
+        proposal=proposal.model_dump(),
+        events=[],
+        status="running",
+    )
+    db_session.add(run)
+    await db_session.commit()
+
+    past = datetime.now(timezone.utc) - timedelta(days=5)
+    with patch("backend.app.memory.qwen.embed", new_callable=AsyncMock) as mock_embed:
+        mock_embed.return_value = [[0.0] * 1536]
+        result = await apply_operator_decision(
+            db_session,
+            run,
+            approved=True,
+            feedback="ok",
+            source_timestamp=past,
+            valid_from=past,
+        )
+
+    assert result["status"] == "simulated_safe"
+    mem = await db_session.get(MemoryRecord, uuid.UUID(result["memory_id"]))
+    assert mem.source_timestamp == past
+    assert mem.valid_from == past
+    assert mem.expires_at is not None
+    assert (mem.expires_at - mem.valid_from).days == 14

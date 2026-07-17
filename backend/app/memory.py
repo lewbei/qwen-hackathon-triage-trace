@@ -192,6 +192,7 @@ async def create_memory(
     embedding: list[float] | None = None,
     meta: dict[str, Any] | None = None,
     auto_embed: bool = False,
+    status: str | None = None,
 ) -> MemoryRecord:
     content = redact(content)
     if embedding is None and auto_embed:
@@ -293,6 +294,12 @@ async def create_memory(
         record.status = "active"
     elif record.status == "candidate" and type != "procedure":
         record.status = "active"
+
+    # Internal callers may request a final accepted status (e.g. "simulated_safe").
+    # This is applied only when the memory was not rejected by the lifecycle.
+    if status is not None and record.status != "quarantined":
+        record.status = status
+
     session.add(record)
     await session.commit()
     await session.refresh(record)

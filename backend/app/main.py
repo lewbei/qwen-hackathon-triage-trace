@@ -473,27 +473,3 @@ async def accumulation(
     background_tasks.add_task(_cleanup_demo_tenant, tenant)
     return result
 
-
-@app.post("/api/demo/judge")
-async def judge_demo(
-    request: Request,
-    background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db),
-) -> dict[str, Any]:
-    """Single judge-facing demo flow.
-
-    Runs the multi-session accumulation scenario (old approved procedure, newer
-    superseding procedure, poison quarantine, and a final incident) and returns
-    a structured result the consolidated UI renders as one timeline. Not for
-    production use.
-    """
-    if not _demo_limiter.allow(_client_ip(request)):
-        raise HTTPException(status_code=429, detail="Too many demo requests. Please wait a minute.")
-    tenant = _scenario_tenant()
-    try:
-        result = await run_accumulation_demo(db, tenant=tenant)
-    except Exception:
-        await _cleanup_demo_tenant(tenant)
-        raise
-    background_tasks.add_task(_cleanup_demo_tenant, tenant)
-    return result

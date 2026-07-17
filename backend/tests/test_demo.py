@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from backend.app.demo import run_accumulation_demo, run_winning_scenario
+from backend.app.demo import _action_matches, run_accumulation_demo, run_winning_scenario
 from backend.app.memory import ACTIVE_STATUSES
 from backend.app.schemas import ActionProposal
 
@@ -89,6 +89,52 @@ async def test_winning_scenario_verdict(db_session):
     assert memories["new"]["id"] in summary["recalled_ids"]
     assert memories["old"]["id"] not in summary["recalled_ids"]
     assert memories["poison"]["id"] not in summary["recalled_ids"]
+
+
+def test_action_matcher_requires_ordered_operation_target_pairs():
+    winning_pairs = [
+        {"operation": "scale", "targets": ["worker", "workers"]},
+        {"operation": "requeue", "targets": ["message", "failed", "queue"]},
+    ]
+    assert _action_matches(
+        "Scale notification workers and requeue failed messages",
+        winning_pairs,
+        ["restart", "delete", "refund", "drop"],
+    ) is True
+    # Reversed order must fail.
+    assert _action_matches(
+        "Requeue failed messages and scale notification workers",
+        winning_pairs,
+        ["restart", "delete", "refund", "drop"],
+    ) is False
+    # Each operation must be paired with an allowed target in its clause.
+    assert _action_matches(
+        "Scale Redis and restart cart workers",
+        winning_pairs,
+        ["restart", "delete", "refund", "drop"],
+    ) is False
+
+
+def test_action_matcher_allows_accumulation_required_pairs():
+    accumulation_pairs = [
+        {"operation": "scale", "targets": ["redis", "cache"]},
+        {"operation": "restart", "targets": ["cart", "workers", "worker"]},
+    ]
+    assert _action_matches(
+        "Scale Redis and restart cart workers",
+        accumulation_pairs,
+        ["database", "delete", "refund", "drop"],
+    ) is True
+    assert _action_matches(
+        "Restart cart workers and scale Redis",
+        accumulation_pairs,
+        ["database", "delete", "refund", "drop"],
+    ) is False
+    assert _action_matches(
+        "Scale the cart workers and restart Redis",
+        accumulation_pairs,
+        ["database", "delete", "refund", "drop"],
+    ) is False
 
 
 @pytest.mark.asyncio

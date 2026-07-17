@@ -39,10 +39,16 @@ interface ScenarioProposal {
   insufficient_evidence?: boolean
 }
 
+interface RunEvent {
+  event_type: string
+  payload?: Record<string, unknown>
+  created_at?: string
+}
+
 interface ScenarioRun {
   run_id: string
   proposal: ScenarioProposal | null
-  events: any[]
+  events: RunEvent[]
 }
 
 interface Scenario {
@@ -88,11 +94,11 @@ export default function JudgeDemo() {
     setError(null)
     setScenario(null)
     try {
-      const res = await fetch('/api/demo/judge', { method: 'POST' })
+      const res = await fetch('/api/demo/accumulation', { method: 'POST' })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       setScenario(await res.json())
-    } catch (err: any) {
-      setError(err.toString())
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
     } finally {
       setLoading(false)
     }
