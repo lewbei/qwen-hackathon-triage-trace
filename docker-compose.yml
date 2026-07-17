@@ -31,8 +31,8 @@ services:
 
   ui:
     build:
-      context: .
-      dockerfile: frontend/Dockerfile
+      context: frontend
+      dockerfile: Dockerfile
     ports:
       - "5173:80"
     depends_on:

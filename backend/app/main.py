@@ -7,7 +7,7 @@ from enum import Enum
 from typing import Any
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Header
 from fastapi.responses import StreamingResponse
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +16,15 @@ from backend.app.agent import run_incident
 from backend.app.config import settings
 from backend.app.memory import create_memory, get_memory_lineage
 from backend.app.models import AsyncSessionLocal, MemoryRecord, RunRecord, get_db
-from backend.app.schemas import ActionProposal, Alert, DecisionIn, MemoryRecord as MemoryRecordSchema, Mode, RunOut
+from backend.app.schemas import (
+    ActionProposal,
+    Alert,
+    DecisionIn,
+    MemoryRecord as MemoryRecordSchema,
+    Mode,
+    RunEvent,
+    RunOut,
+)
 from backend.app.skills import invoke_skill, list_skills
 
 app = FastAPI(title="TriageTrace", version="0.1.0")
@@ -313,12 +321,18 @@ async def _seed_fixture(db: AsyncSession, tenant: str, service: str) -> int:
 
 
 @app.post("/api/demo/reset")
-async def demo_reset(db: AsyncSession = Depends(get_db)) -> dict[str, str]:
-    await db.execute(delete(MemoryRecord))
-    await db.execute(delete(RunRecord))
+async def demo_reset(
+    db: AsyncSession = Depends(get_db),
+    x_demo_secret: str = Header(default=""),
+) -> dict[str, Any]:
+    if settings.demo_secret and x_demo_secret != settings.demo_secret:
+        raise HTTPException(status_code=403, detail="invalid demo secret")
+    tenant = settings.default_tenant
+    await db.execute(delete(MemoryRecord).where(MemoryRecord.tenant == tenant))
+    await db.execute(delete(RunRecord).where(RunRecord.tenant == tenant))
     await db.commit()
     seeded = 0
     for service in ["cart-service", "payment-service"]:
-        seeded += await _seed_fixture(db, settings.default_tenant, service)
+        seeded += await _seed_fixture(db, tenant, service)
     await db.commit()
     return {"status": "reset", "seeded": seeded}

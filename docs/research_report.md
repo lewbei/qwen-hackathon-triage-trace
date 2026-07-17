@@ -171,7 +171,7 @@ TriageTrace already implements this: every remediation is a **proposal** pending
 
 ## 5. One-sentence value proposition
 
-> TriageTrace is the first open-source memory layer for incident-response agents that learns from validated operator feedback, hard-forgets stale runbooks, and quarantines poisoned instructions before they can be recalled — turning a production safety risk into a measurable +46.2% accuracy improvement.
+> TriageTrace is the first open-source memory layer for incident-response agents that remembers operator-approved (and, where available, outcome-verified) feedback, hard-forgets stale runbooks, and quarantines poisoned instructions before they can be recalled — turning a production safety risk into a measurable +61.5% accuracy improvement (stateless 23.1% → memory 84.6%).
 
 ## 6. Sources
 

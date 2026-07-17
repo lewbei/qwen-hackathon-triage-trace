@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     memory_token_budget: int = 800
     use_llm_poison_check: bool = False
     default_tenant: str = "default"
+    demo_secret: str = ""
 
     live_qwen_test: int = 0
 

@@ -437,7 +437,14 @@ async def retrieve_and_pack(
     packed, omitted, used_tokens = _pack_memories(selected, budget=budget)
 
     # Rejected status memories are reported for audit but not packed.
-    rejected = [m for m in candidates if m.status in ("quarantined", "superseded", "expired")]
+    # search_memories only returns active records, so query the audit set separately.
+    audit_stmt = select(MemoryRecord).where(
+        MemoryRecord.tenant == tenant,
+        MemoryRecord.scope == scope,
+        MemoryRecord.status.in_(["quarantined", "superseded", "expired"]),
+    ).order_by(MemoryRecord.source_timestamp.desc()).limit(50)
+    audit_result = await session.execute(audit_stmt)
+    rejected = list(audit_result.scalars().all())
 
     metadata = {
         "candidates": len(candidates),

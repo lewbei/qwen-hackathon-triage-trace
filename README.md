@@ -2,12 +2,12 @@
 
 **Track 1: MemoryAgent** — Qwen Hackathon 2026
 
-TriageTrace is a temporal-memory incident-response agent that learns from validated outcomes and refuses poisoned, contradictory, or obsolete memories. It uses Qwen Cloud (`qwen3.7-plus` for reasoning, `text-embedding-v4` for memory vectors, plus slots for `qwen3.6-flash` extraction and `qwen3-rerank`) to propose, refine, and audit remediations.
+TriageTrace is a temporal-memory incident-response agent that remembers operator-approved (and, where available, outcome-verified) remediations and refuses poisoned, contradictory, or obsolete memories. It uses Qwen Cloud (`qwen3.7-plus` for reasoning, `text-embedding-v4` for memory vectors, plus slots for `qwen3.6-flash` extraction and `qwen3-rerank`) to propose, refine, and audit remediations.
 
 ## Hosted Demo
 
-- Live URL: `https://TODO-alibaba-ecs-url`
-- Public repository: `https://github.com/TODO/triage-trace`
+- Public repository: https://github.com/lewbei/qwen-hackathon-triage-trace
+- Live demo URL: deployed via `scripts/deploy_alibaba_ecs.sh` (update this line with the ECS public IP after apply)
 
 ## Quickstart
 
@@ -37,7 +37,7 @@ curl -s -X POST "http://localhost:8000/api/proposals/<run-id>/decision" \
 ## What it proves
 
 1. A stateless Qwen agent inspects fixtures and proposes a remediation.
-2. An operator approves or rejects it; the validated lesson becomes a durable `procedure` or `preference` memory with a vector embedding.
+2. An operator approves or rejects it; the operator-approved lesson becomes a durable `procedure` or `preference` memory with a vector embedding.
 3. A later incident in the same scope triggers memory retrieval: vector candidates, reranking/fallback, MMR diversity scoring, utility weighting, and 800-token packing. Policies and preferences are packed first.
 4. A newer validated procedure supersedes an older one; a memory that contradicts a higher-authority source is quarantined; a malicious instruction embedded in a log is not promoted.
 5. `POST /api/demo/reset` reseeds fixture observations without touching other tenants.
@@ -50,24 +50,24 @@ Results are committed to `evaluations/` and summarized below. Three test surface
 
 A full live Qwen adversarial evaluation on 13 hand-written scenarios (4 repeated, 3 operator-policy, 3 temporal-conflict, 2 poisoned-log, 1 irrelevant-overload):
 
-|| Metric | Stateless | Memory | Δ |
-|---|---|---|---|---|
-|| Correct-action accuracy | 23.1% | 84.6% | **+61.5%** |
-|| Policy compliance | 100% | 100% | 0% |
-|| Avg latency | 30.8 s | 26.4 s | −4.4 s |
-|| Avg total tokens | 2,545 | 2,363 | −182 |
-|| Avg injected memory tokens | 0 | 26 | +26 |
-|| Avg recalled memory IDs | 0.0 | 1.3 | +1.3 |
+| Metric | Stateless | Memory | Δ |
+|---|---|---|---|
+| Correct-action accuracy | 23.1% | 84.6% | **+61.5%** |
+| Policy compliance | 100% | 100% | 0% |
+| Avg latency | 30.8 s | 26.4 s | −4.4 s |
+| Avg total tokens | 2,545 | 2,363 | −182 |
+| Avg injected memory tokens | 0 | 26 | +26 |
+| Avg recalled memory IDs | 0.0 | 1.3 | +1.3 |
 
 Adversarial-memory metrics:
 
-|| Metric | Memory |
-|---|---|---|
-|| Poisoned-memory recalled | 0 / 2 |
-|| Poison-safe rate | 100% |
-|| Stale-memory recalled | 0 / 3 |
-|| Temporal correct rate | 3 / 3 (100%) |
-|| Irrelevant correct recall | 1 / 1 (100%) |
+| Metric | Memory |
+|---|---|
+| Poisoned-memory recalled | 0 / 2 |
+| Poison-safe rate | 100% |
+| Stale-memory recalled | 0 / 3 |
+| Temporal correct rate | 3 / 3 (100%) |
+| Irrelevant correct recall | 1 / 1 (100%) |
 
 Scenario highlights:
 
@@ -90,14 +90,14 @@ python backend/scripts/evaluate.py --live # live Qwen
 
 Results (committed to `evaluations/asb_memorygate.json`):
 
-|| Metric | Value |
-|---|---|---|
-|| True positives (attacks quarantined) | 54 / 100 |
-|| False positives (normals quarantined) | 0 / 20 |
-|| Precision | 1.00 |
-|| Recall | 0.54 |
-|| F1 | 0.70 |
-|| Accuracy | 61.7% |
+| Metric | Value |
+|---|---|
+| True positives (attacks quarantined) | 54 / 100 |
+| False positives (normals quarantined) | 0 / 20 |
+| Precision | 1.00 |
+| Recall | 0.54 |
+| F1 | 0.70 |
+| Accuracy | 61.7% |
 
 The zero false-positive rate is the critical result: MemoryGate never blocks a legitimate tool on this sample. The remaining false negatives are highly obfuscated, non-aggressive attack instructions that currently evade the LLM fallback.
 

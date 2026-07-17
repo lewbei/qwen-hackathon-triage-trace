@@ -120,7 +120,7 @@ The MemoryAgent track is probably crowded with chat/memory demos. A **production
 
 ## 5. Key talking points for the submission / video
 
-- **Not another chat memory demo** — TriageTrace learns from validated incident outcomes in a regulated, high-stakes environment.
+- **Not another chat memory demo** — TriageTrace remembers operator-approved (and, where available, outcome-verified) incident outcomes in a regulated, high-stakes environment.
 - **Memory safety by design** — credentials redacted, provenance scored, policies packed first, poisoned memories quarantined, stale memories superseded.
 - **Measured improvement** — live Qwen evaluation shows memory mode beats the identical stateless Qwen baseline on accuracy while remaining 100% policy-compliant.
 - **Built for production** — FastAPI, SQLAlchemy migrations, pgvector, Docker, Alibaba Cloud ECS/RDS, React dashboard.
