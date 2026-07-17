@@ -15,17 +15,26 @@ This directory contains Infrastructure-as-Code for deploying TriageTrace on Alib
    ```hcl
    db_password  = "your-rds-password"
    qwen_api_key = "your-dashscope-key"
+   ssh_cidr     = "YOUR.IP.ADDRESS/32"
    ```
 4. Deploy:
    ```bash
    terraform init
    terraform apply
    ```
-5. After apply, Terraform prints the ECS public IP. Update your `.env` and README live URL with that IP.
+5. After apply, Terraform prints the ECS public IP. Verify the deployment:
+   ```bash
+   curl -f http://$(terraform output -raw public_ip)/api/health
+
+   curl -f -X POST \
+     http://$(terraform output -raw public_ip)/api/demo/accumulation
+   ```
 
 ## Notes
 
 - This is a proof-of-deployment template. Adjust instance class, security-group rules, and SSH key for your account.
+- The public UI is served on port 80 and the API is proxied through `/api`. Ports 8000 and 5173 are not exposed externally.
+- SSH is allowed only from the CIDR you set in `ssh_cidr`.
 - The RDS instance must have `pgvector` enabled; Terraform creates a PostgreSQL 15 instance.
-- `pgvector` is created automatically by `docker compose` using `pgvector/pgvector:pg16`. For RDS, run `CREATE EXTENSION IF NOT EXISTS vector;` after creation.
-- The `cloud-init.sh` script installs Docker, clones the public repo, writes the environment file, and runs `docker compose up -d`.
+- `cloud-init.sh` waits for RDS, installs the `vector` extension, starts `docker-compose.prod.yml`, and verifies `/api/health` before completing.
+- Containers have `restart: unless-stopped` so the demo survives an ECS reboot.

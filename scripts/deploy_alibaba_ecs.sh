@@ -11,7 +11,12 @@ if [[ -z "${ALICLOUD_ACCESS_KEY:-}" || -z "${ALICLOUD_SECRET_KEY:-}" ]]; then
 fi
 
 if [[ ! -f "$DEPLOY_DIR/terraform.tfvars" ]]; then
-  echo "Error: create $DEPLOY_DIR/terraform.tfvars with db_password and qwen_api_key"
+  echo "Error: create $DEPLOY_DIR/terraform.tfvars with db_password, qwen_api_key, and ssh_cidr"
+  exit 1
+fi
+
+if ! grep -qE '^\s*ssh_cidr\s*=' "$DEPLOY_DIR/terraform.tfvars"; then
+  echo "Error: set ssh_cidr in $DEPLOY_DIR/terraform.tfvars (use your IP/32)"
   exit 1
 fi
 

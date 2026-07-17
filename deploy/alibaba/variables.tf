@@ -22,6 +22,12 @@ variable "key_name" {
   default     = ""
 }
 
+variable "ssh_cidr" {
+  description = "CIDR block allowed to SSH to the ECS instance (required; set to your IP/32)"
+  type        = string
+  default     = ""
+}
+
 variable "instance_type" {
   description = "ECS instance type"
   type        = string

@@ -31,6 +31,7 @@ resource "alicloud_security_group" "triagetrace" {
 }
 
 resource "alicloud_security_group_rule" "ssh" {
+  count             = var.ssh_cidr != "" ? 1 : 0
   type              = "ingress"
   ip_protocol       = "tcp"
   nic_type          = "internet"
@@ -38,7 +39,7 @@ resource "alicloud_security_group_rule" "ssh" {
   port_range        = "22/22"
   priority          = 1
   security_group_id = alicloud_security_group.triagetrace.id
-  cidr_ip           = "0.0.0.0/0"
+  cidr_ip           = var.ssh_cidr
 }
 
 resource "alicloud_security_group_rule" "http" {
@@ -58,28 +59,6 @@ resource "alicloud_security_group_rule" "https" {
   nic_type          = "internet"
   policy            = "accept"
   port_range        = "443/443"
-  priority          = 1
-  security_group_id = alicloud_security_group.triagetrace.id
-  cidr_ip           = "0.0.0.0/0"
-}
-
-resource "alicloud_security_group_rule" "api" {
-  type              = "ingress"
-  ip_protocol       = "tcp"
-  nic_type          = "internet"
-  policy            = "accept"
-  port_range        = "8000/8000"
-  priority          = 1
-  security_group_id = alicloud_security_group.triagetrace.id
-  cidr_ip           = "0.0.0.0/0"
-}
-
-resource "alicloud_security_group_rule" "ui" {
-  type              = "ingress"
-  ip_protocol       = "tcp"
-  nic_type          = "internet"
-  policy            = "accept"
-  port_range        = "5173/5173"
   priority          = 1
   security_group_id = alicloud_security_group.triagetrace.id
   cidr_ip           = "0.0.0.0/0"
