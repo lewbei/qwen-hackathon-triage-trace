@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.agent import run_incident
 from backend.app.config import settings
-from backend.app.memory import create_memory
+from backend.app.memory import create_memory, get_memory_lineage
 from backend.app.models import MemoryRecord, RunRecord, get_db
 from backend.app.schemas import ActionProposal, Alert, DecisionIn, MemoryRecord as MemoryRecordSchema, Mode, RunOut
 
@@ -175,6 +175,18 @@ async def add_memory(
         auto_embed=True,
     )
     return MemoryRecordSchema.model_validate(record)
+
+
+@app.get("/api/memories/{memory_id}/lineage")
+async def memory_lineage(memory_id: str, tenant: str = settings.default_tenant, db: AsyncSession = Depends(get_db)) -> list[MemoryRecordSchema]:
+    try:
+        mem_id = UUID(memory_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid memory id")
+    lineage = await get_memory_lineage(db, tenant, mem_id)
+    if not lineage:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    return [MemoryRecordSchema.model_validate(r) for r in lineage]
 
 
 @app.delete("/api/memories/{memory_id}")

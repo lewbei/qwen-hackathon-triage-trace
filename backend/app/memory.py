@@ -67,6 +67,74 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
     return dot / (norm_a * norm_b)
 
 
+# MemoryGate: pre-write validation to quarantine poisoned or policy-violating memories.
+POISON_PATTERNS = [
+    r"ignore all (policies|instructions|previous)",
+    r"bypass all checks",
+    r"refund immediately",
+    r"restart the database",
+    r"delete user preferences",
+    r"disregard (?:all|the) (?:policies|instructions|safety|rules)",
+    r"you must (?:ignore|bypass|override)",
+]
+
+
+def _detect_poison(content: str) -> str | None:
+    import re
+    lower = content.lower()
+    for pattern in POISON_PATTERNS:
+        if re.search(pattern, lower):
+            return f"poison pattern matched: {pattern}"
+    return None
+
+
+def _policy_contradiction(content: str, policy_content: str) -> str | None:
+    """Naive contradiction check: policy says 'Never X' and memory says 'X'."""
+    import re
+    p = policy_content.lower()
+    m = content.lower()
+    # Find 'never' phrases in policy and check if the forbidden action appears in memory.
+    for match in re.finditer(r"never\s+(.+?)(?:\.|$|\s+first|\s+without)", p):
+        forbidden = match.group(1).strip().lower()
+        # Extract the core verb phrase (first 3-5 words) to avoid over-matching.
+        core = " ".join(forbidden.split()[:4])
+        if core and core in m:
+            return f"contradicts policy: {match.group(0).strip()}"
+    return None
+
+
+async def _memory_gate(session: AsyncSession, record: MemoryRecord) -> bool:
+    """Validate a memory before it is persisted. Returns True if accepted."""
+    # Trusted sources bypass heuristic checks, but still respect active policies.
+    trusted = record.provenance in ("operator", "approved_execution")
+
+    if not trusted:
+        poison = _detect_poison(record.content)
+        if poison:
+            record.status = "quarantined"
+            record.meta["quarantine_reason"] = poison
+            return False
+
+    # Check against active policies in the same scope/subject.
+    result = await session.execute(
+        select(MemoryRecord).where(
+            MemoryRecord.tenant == record.tenant,
+            MemoryRecord.scope == record.scope,
+            MemoryRecord.subject == record.subject,
+            MemoryRecord.type == "policy",
+            MemoryRecord.status == "active",
+        )
+    )
+    for policy in result.scalars():
+        contradiction = _policy_contradiction(record.content, policy.content)
+        if contradiction:
+            record.status = "quarantined"
+            record.meta["quarantine_reason"] = f"policy contradiction: {contradiction}"
+            return False
+
+    return True
+
+
 async def create_memory(
     session: AsyncSession,
     tenant: str,
@@ -110,6 +178,15 @@ async def create_memory(
         status="candidate",
         meta=meta or {},
     )
+    # MemoryGate: quarantine poisoned or policy-violating memories.
+    gate_ok = await _memory_gate(session, record)
+
+    if not gate_ok:
+        session.add(record)
+        await session.commit()
+        await session.refresh(record)
+        return record
+
     # Lifecycle: compare with active existing memories of same scope/subject.
     existing = await session.execute(
         select(MemoryRecord).where(
@@ -321,3 +398,18 @@ def pack_memories(
     packed, omitted, _ = _pack_memories(memories, budget=budget)
     rejected = [m for m in memories if m.status in ("quarantined", "superseded", "expired")]
     return packed, omitted, rejected
+
+
+async def get_memory_lineage(session: AsyncSession, tenant: str, memory_id: uuid.UUID) -> list[MemoryRecord]:
+    """Return the chain of memories from the requested record back through supersedes_id."""
+    lineage: list[MemoryRecord] = []
+    current_id = memory_id
+    visited: set[uuid.UUID] = set()
+    while current_id and current_id not in visited:
+        visited.add(current_id)
+        record = await session.get(MemoryRecord, current_id)
+        if not record or record.tenant != tenant:
+            break
+        lineage.append(record)
+        current_id = record.supersedes_id
+    return lineage

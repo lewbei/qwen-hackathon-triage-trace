@@ -33,6 +33,7 @@ class ActionProposal(BaseModel):
     approval_required: bool = True
     status: str = "pending"
     recalled_memory_ids: list[str] = []
+    insufficient_evidence: bool = False
 
 
 class RunEvent(BaseModel):
