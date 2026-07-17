@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from backend.app.demo import run_winning_scenario
+from backend.app.demo import run_accumulation_demo, run_winning_scenario
 from backend.app.schemas import ActionProposal
 
 
@@ -70,6 +70,52 @@ async def test_winning_scenario_verdict(db_session):
         mock_run.side_effect = _run_incident_side_effect
 
         result = await run_winning_scenario(db_session, tenant="test-winning-demo")
+
+    summary = result["summary"]
+    memories = result["memories"]
+
+    assert memories["old"]["status"] == "superseded"
+    assert memories["new"]["status"] == "active"
+    assert memories["poison"]["status"] == "quarantined"
+    assert summary["demo_passed"] is True
+    assert memories["new"]["id"] in summary["recalled_ids"]
+    assert memories["old"]["id"] not in summary["recalled_ids"]
+    assert memories["poison"]["id"] not in summary["recalled_ids"]
+
+
+@pytest.mark.asyncio
+async def test_accumulation_demo_verdict(db_session):
+    with patch("backend.app.demo.qwen.embed", new_callable=AsyncMock) as mock_embed, \
+         patch("backend.app.demo.run_incident", new_callable=AsyncMock) as mock_run:
+        mock_embed.return_value = [[0.0] * 1536, [1.0] * 1536, [-1.0] * 1536]
+
+        async def _run_incident_side_effect(db, alert, mode):
+            from sqlalchemy import select
+            from backend.app.models import MemoryRecord
+            result = await db.execute(
+                select(MemoryRecord).where(
+                    MemoryRecord.tenant == alert.tenant,
+                    MemoryRecord.scope == "cart-service",
+                )
+            )
+            rows = list(result.scalars().all())
+            new_mem = next((m for m in rows if "scale the Redis cache" in m.content), None)
+            if mode.value == "stateless":
+                recalled = []
+            else:
+                recalled = [str(new_mem.id)] if new_mem else []
+            return {
+                "id": f"test-run-{mode.value}",
+                "tenant": alert.tenant,
+                "mode": mode,
+                "alert": alert,
+                "events": [],
+                "proposal": _make_proposal(recalled, action=f"{mode.value} action"),
+            }
+
+        mock_run.side_effect = _run_incident_side_effect
+
+        result = await run_accumulation_demo(db_session, tenant="test-accumulation-demo")
 
     summary = result["summary"]
     memories = result["memories"]

@@ -13,7 +13,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.agent import run_incident
-from backend.app.demo import run_winning_scenario
+from backend.app.demo import run_accumulation_demo, run_winning_scenario
 from backend.app.config import settings
 from backend.app.memory import create_memory, get_memory_lineage
 from backend.app.simulate import simulate_action
@@ -413,3 +413,14 @@ async def winning_scenario(db: AsyncSession = Depends(get_db)) -> dict[str, Any]
     Each call runs in an isolated tenant to avoid cross-user interference.
     """
     return await run_winning_scenario(db)
+
+
+@app.post("/api/demo/accumulation")
+async def accumulation(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    """Run a controlled multi-session accumulation scenario.
+
+    Simulates prior approved sessions (old procedure, newer procedure, poison attempt)
+    and then runs a fresh incident to show that memory recalls only the current safe
+    procedure. Not for production use.
+    """
+    return await run_accumulation_demo(db)

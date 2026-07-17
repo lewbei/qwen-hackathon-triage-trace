@@ -143,7 +143,7 @@ def _policy_contradiction(content: str, policy_content: str) -> str | None:
 async def _memory_gate(session: AsyncSession, record: MemoryRecord) -> bool:
     """Validate a memory before it is persisted. Returns True if accepted."""
     # Trusted sources bypass heuristic checks, but still respect active policies.
-    trusted = record.provenance in ("operator", "approved_execution")
+    trusted = record.provenance in ("operator", "approved_execution", "validated_execution")
 
     if not trusted:
         poison = _detect_poison(record.content)

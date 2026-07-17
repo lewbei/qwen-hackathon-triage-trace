@@ -186,9 +186,15 @@ async def run_incident(
     )
 
     tool_results: list[dict[str, Any]] = []
+    valid_tools = {t["function"]["name"] for t in TOOLS}
     for tc in first.get("tool_calls", []):
-        name = tc["function"]["name"]
-        arguments = _safe_parse_json(tc["function"]["arguments"])
+        func = tc.get("function") or {}
+        name = func.get("name", "")
+        if not name or name not in valid_tools:
+            # Skip malformed or unknown tool calls instead of crashing the run.
+            tool_results.append({"tool": name or "unknown", "arguments": {}, "result": {"error": f"unknown or empty tool: {name!r}"}})
+            continue
+        arguments = _safe_parse_json(func.get("arguments") or "{}")
         result = dispatch(name, arguments)
         tool_results.append({"tool": name, "arguments": arguments, "result": result})
     emit("tools.called", {"results": tool_results})
