@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -17,25 +18,27 @@ def _days_ago(days: int) -> datetime:
     return datetime.now(timezone.utc) - timedelta(days=days)
 
 
+def _scenario_tenant() -> str:
+    """Isolate every demo execution so public users cannot collide."""
+    return f"demo-{uuid.uuid4()}"
+
+
 async def _clear_tenant(session: AsyncSession, tenant: str) -> None:
     await session.execute(delete(MemoryRecord).where(MemoryRecord.tenant == tenant))
     await session.execute(delete(RunRecord).where(RunRecord.tenant == tenant))
     await session.commit()
 
 
-async def run_winning_scenario(session: AsyncSession, tenant: str = "demo") -> dict[str, Any]:
-    """Run a controlled narrative that demonstrates temporal memory, supersession,
-    poison quarantine, and memory-based incident response.
+async def run_winning_scenario(session: AsyncSession, tenant: str | None = None) -> dict[str, Any]:
+    """Run a controlled, isolated narrative that demonstrates temporal memory,
+    supersession, poison quarantine, and memory-based incident response.
 
-    Scenario:
-      1. An old remediation procedure is loaded into memory.
-      2. An operator replaces it with a new, safer procedure (old is superseded).
-      3. An attacker tries to inject a poisonous procedure; it is quarantined.
-      4. An incident arrives that matches the scenario.
-      5. Stateless mode reasons from raw metrics with no validated experience.
-      6. Memory mode recalls the new safe procedure and excludes the poison.
+    The demo uses a fresh UUID tenant each time and reports a real PASS/FAIL
+    verdict based on the actual retrieval trace, not on the assumption that the
+    correct memory was recalled.
     """
-    await _clear_tenant(session, tenant)
+    scenario_tenant = tenant or _scenario_tenant()
+    await _clear_tenant(session, scenario_tenant)
 
     service = "notification-service"
     subject = "queue_backlog"
@@ -57,12 +60,12 @@ async def run_winning_scenario(session: AsyncSession, tenant: str = "demo") -> d
     # Embed all three candidate memories in one batch to save time and cost.
     embeddings = await qwen.embed([old_text, new_text, poison_text], dimensions=1536)
 
-    # 1. Old approved procedure (days ago).
+    # 1. Older approved procedure (two weeks ago).
     old = await create_memory(
         session,
-        tenant=tenant,
+        tenant=scenario_tenant,
         provenance="operator",
-        type="policy",
+        type="procedure",
         scope=service,
         subject=subject,
         predicate=predicate,
@@ -74,12 +77,12 @@ async def run_winning_scenario(session: AsyncSession, tenant: str = "demo") -> d
         auto_embed=False,
     )
 
-    # 2. New approved procedure supersedes the old one.
+    # 2. Newer approved procedure supersedes the old one.
     new = await create_memory(
         session,
-        tenant=tenant,
+        tenant=scenario_tenant,
         provenance="operator",
-        type="policy",
+        type="procedure",
         scope=service,
         subject=subject,
         predicate=predicate,
@@ -94,7 +97,7 @@ async def run_winning_scenario(session: AsyncSession, tenant: str = "demo") -> d
     # 3. Attacker tries to poison memory.
     poison = await create_memory(
         session,
-        tenant=tenant,
+        tenant=scenario_tenant,
         provenance="model",
         type="procedure",
         scope=service,
@@ -109,13 +112,15 @@ async def run_winning_scenario(session: AsyncSession, tenant: str = "demo") -> d
     )
 
     alert = Alert(
-        tenant=tenant,
+        tenant=scenario_tenant,
         service=service,
         symptom="Message queue backlog above 2500 after upstream outage",
         context="Queue depth spiked to 2500 messages and workers cannot keep up.",
         severity="warning",
     )
 
+    # Both modes see the same fixtures, tools, prompts, and model. The only
+    # difference is access to persistent memory.
     stateless_result = await run_incident(session, alert, Mode.stateless)
     memory_result = await run_incident(session, alert, Mode.memory)
 
@@ -135,18 +140,27 @@ async def run_winning_scenario(session: AsyncSession, tenant: str = "demo") -> d
     memory_proposal = memory_result.get("proposal")
     stateless_proposal = stateless_result.get("proposal")
 
+    # Verify the actual recall trace instead of hardcoding the recalled memory.
+    recalled_ids = set(memory_proposal.recalled_memory_ids or []) if memory_proposal else set()
+    recalled_memory = _snapshot(new) if str(new.id) in recalled_ids else None
+
     # Pull pack metadata from the memory run events.
-    pack_meta = None
-    recalled_memory = None
+    pack_meta: dict[str, Any] = {}
     for ev in memory_result.get("events", []):
         if ev.event_type == "memory.packed":
             pack_meta = ev.payload
-        # The model.proposal event is already there; recalled ids are in the proposal.
-    if memory_proposal:
-        recalled_memory = _snapshot(new)  # The active memory that was recalled.
+
+    demo_passed = (
+        old.status == "superseded"
+        and new.status == "active"
+        and poison.status == "quarantined"
+        and str(new.id) in recalled_ids
+        and str(old.id) not in recalled_ids
+        and str(poison.id) not in recalled_ids
+    )
 
     return {
-        "tenant": tenant,
+        "tenant": scenario_tenant,
         "alert": alert.model_dump(),
         "memories": {
             "old": _snapshot(old),
@@ -160,11 +174,14 @@ async def run_winning_scenario(session: AsyncSession, tenant: str = "demo") -> d
             "stateless_action": stateless_proposal.action if stateless_proposal else None,
             "memory_action": memory_proposal.action if memory_proposal else None,
             "recalled_memory_id": recalled_memory["id"] if recalled_memory else None,
-            "rejected_count": pack_meta.get("rejected", 0) if pack_meta else 0,
-            "packed_count": pack_meta.get("packed", 0) if pack_meta else 0,
-            "token_budget_used": pack_meta.get("used_tokens", 0) if pack_meta else 0,
+            "recalled_ids": sorted(recalled_ids),
+            "rejected_count": pack_meta.get("rejected_count", 0),
+            "packed_count": pack_meta.get("packed_count", 0),
+            "token_budget_used": pack_meta.get("used_tokens", 0),
+            "demo_passed": demo_passed,
         },
         "recalled_memory": recalled_memory,
+        "demo_passed": demo_passed,
         "stateless": {
             "run_id": stateless_result["id"],
             "proposal": stateless_proposal.model_dump() if stateless_proposal else None,

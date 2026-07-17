@@ -17,6 +17,58 @@ from backend.app.schemas import ActionProposal, Alert, Mode, RunEvent
 from backend.app.tools import TOOLS, dispatch
 
 
+def _safe_parse_json(text: str) -> dict[str, Any]:
+    """Parse a JSON string, tolerating common LLM artifacts like markdown fences,
+    trailing braces, or unbalanced wrapping. Falls back to extracting the first
+    balanced `{...}` object.
+    """
+    text = text.strip()
+    if text.startswith("```"):
+        # Strip markdown code fences if present.
+        text = text.split("```", 2)[-2] if text.count("```") >= 2 else text.strip("`")
+        text = text.strip()
+        if text.lower().startswith("json"):
+            text = text[4:].strip()
+    if not text:
+        return {}
+
+    # First attempt: direct parse.
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
+        return {"value": parsed}
+    except json.JSONDecodeError:
+        pass
+
+    # Second attempt: remove a trailing brace if the string ends with duplicated `}}`.
+    if text.endswith("}}"):
+        try:
+            parsed = json.loads(text[:-1])
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+
+    # Third attempt: extract the first balanced `{...}` object.
+    start = text.find("{")
+    if start != -1:
+        depth = 0
+        for i, ch in enumerate(text[start:], start):
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(text[start : i + 1])
+                    except json.JSONDecodeError:
+                        break
+
+    # Last resort: return the raw text so the caller can decide.
+    return {"_raw": text}
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -89,10 +141,16 @@ async def run_incident(
         emit(
             "memory.packed",
             {
-                "packed": recalled_ids,
-                "omitted": [str(m.id) for m in omitted],
-                "rejected": [str(m.id) for m in rejected],
-                **pack_meta,
+                "packed_ids": recalled_ids,
+                "omitted_ids": [str(m.id) for m in omitted],
+                "rejected_ids": [str(m.id) for m in rejected],
+                "packed_count": len(packed),
+                "omitted_count": len(omitted),
+                "rejected_count": len(rejected),
+                "candidates": pack_meta["candidates"],
+                "selected": pack_meta["selected"],
+                "used_tokens": pack_meta["used_tokens"],
+                "budget": pack_meta["budget"],
             },
         )
 
@@ -130,7 +188,7 @@ async def run_incident(
     tool_results: list[dict[str, Any]] = []
     for tc in first.get("tool_calls", []):
         name = tc["function"]["name"]
-        arguments = json.loads(tc["function"]["arguments"])
+        arguments = _safe_parse_json(tc["function"]["arguments"])
         result = dispatch(name, arguments)
         tool_results.append({"tool": name, "arguments": arguments, "result": result})
     emit("tools.called", {"results": tool_results})

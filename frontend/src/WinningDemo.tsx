@@ -18,10 +18,12 @@ interface ScenarioSummary {
   poison_status: string
   stateless_action: string
   memory_action: string
-  recalled_memory_id: string
+  recalled_memory_id: string | null
+  recalled_ids: string[]
   rejected_count: number
   packed_count: number
   token_budget_used: number
+  demo_passed: boolean
 }
 
 interface ScenarioProposal {
@@ -55,7 +57,8 @@ interface Scenario {
     poison: ScenarioMemory
   }
   summary: ScenarioSummary
-  recalled_memory: ScenarioMemory
+  recalled_memory: ScenarioMemory | null
+  demo_passed: boolean
   stateless: ScenarioRun
   memory: ScenarioRun
 }
@@ -92,9 +95,9 @@ export default function WinningDemo() {
     <div className="bg-white p-6 rounded shadow mb-6">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-xl font-bold">Winning Demo: Temporal Memory Firewall</h2>
+          <h2 className="text-xl font-bold">Controlled Memory-Firewall Test</h2>
           <p className="text-sm text-gray-600">
-            A controlled incident that demonstrates supersession, poison quarantine, and validated memory recall.
+            Temporal supersession, poison quarantine, and validated memory recall on a fresh isolated tenant.
           </p>
         </div>
         <button
@@ -102,18 +105,28 @@ export default function WinningDemo() {
           onClick={runScenario}
           disabled={loading}
         >
-          {loading ? 'Running...' : 'Run Winning Demo'}
+          {loading ? 'Running...' : 'Run Controlled Demo'}
         </button>
       </div>
 
       {error && <p className="text-red-600 text-sm mb-4">{error}</p>}
 
       {!scenario && !loading && (
-        <p className="text-gray-500 text-sm">Click the button to run the demo scenario.</p>
+        <p className="text-gray-500 text-sm">Click the button to run the isolated demo scenario.</p>
       )}
 
       {scenario && (
         <div className="space-y-6">
+          {scenario.demo_passed ? (
+            <div className="bg-green-100 text-green-800 p-3 rounded font-semibold">
+              PASS — the current procedure was recalled and stale/poisoned memories were excluded.
+            </div>
+          ) : (
+            <div className="bg-red-100 text-red-800 p-3 rounded font-semibold">
+              FAIL — inspect the retrieval trace below.
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             {memOrder.map((key) => {
               const m = scenario.memories[key]
@@ -150,9 +163,13 @@ export default function WinningDemo() {
               <p className="text-xs text-gray-600 line-clamp-4" title={scenario.memory.proposal?.evidence || ''}>
                 {scenario.memory.proposal?.evidence || 'No evidence.'}
               </p>
-              {scenario.recalled_memory && (
+              {scenario.recalled_memory ? (
                 <p className="text-xs text-gray-500 mt-2">
                   Recalled memory: <span className="font-mono">{scenario.recalled_memory.id.slice(0, 8)}</span>
+                </p>
+              ) : (
+                <p className="text-xs text-red-600 mt-2">
+                  Warning: expected memory was not in the actual recall trace.
                 </p>
               )}
             </div>
@@ -183,7 +200,8 @@ export default function WinningDemo() {
               </div>
             </div>
             <p className="text-xs text-gray-600 mt-2">
-              The memory firewall packed 1 validated policy, rejected the superseded old policy and the quarantined poison.
+              Recalled IDs: {scenario.summary.recalled_ids.length > 0 ? scenario.summary.recalled_ids.join(', ') : 'none'}.
+              The firewall packed the validated procedure and rejected the superseded old procedure plus the quarantined poison.
             </p>
           </div>
         </div>

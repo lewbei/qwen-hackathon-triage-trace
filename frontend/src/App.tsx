@@ -115,9 +115,9 @@ function App() {
         setPackMeta({
           used_tokens: packed.payload.used_tokens || 0,
           budget: packed.payload.budget || 800,
-          packed: packed.payload.packed || [],
-          omitted: packed.payload.omitted || [],
-          rejected: packed.payload.rejected || [],
+          packed: packed.payload.packed_ids || [],
+          omitted: packed.payload.omitted_ids || [],
+          rejected: packed.payload.rejected_ids || [],
           candidates: packed.payload.candidates,
           selected: packed.payload.selected,
         })

@@ -342,11 +342,10 @@ async def demo_reset(
 
 
 @app.post("/api/demo/winning-scenario")
-async def winning_scenario(
-    db: AsyncSession = Depends(get_db),
-    tenant: str = "demo",
-) -> dict[str, Any]:
+async def winning_scenario(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     """Run a controlled scenario demonstrating temporal supersession, poison quarantine,
     and memory-based incident response. Not for production use.
+
+    Each call runs in an isolated tenant to avoid cross-user interference.
     """
-    return await run_winning_scenario(db, tenant=tenant)
+    return await run_winning_scenario(db)
