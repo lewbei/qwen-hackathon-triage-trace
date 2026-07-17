@@ -87,25 +87,9 @@ python backend/scripts/evaluate.py --live
 
 ## Architecture
 
-```
-Incident alert
-      |
-      v
-+--------------+      +-----------------+      +------------------+
-|   Agent      |----->|  Evidence tools |      |   Qwen Cloud     |
-|  (FastAPI)   |      |  (metrics,      |<---->| qwen3.7-plus     |
-+--------------+      |  deployments,   |      | text-embedding-v4|
-      |               |  runbooks)      |      | qwen3.6-flash    |
-      v               +-----------------+      +------------------+
-+--------------+
-|  Memory      |  pgvector  +-------------------------------+
-|  firewall:   |<---------->|  MemoryRecord lifecycle       |
-|  vector      |            |  active/superseded/quarantine |
-|  retrieve    |            |  MMR + utility + token pack   |
-+--------------+            +-------------------------------+
-```
+![Architecture](docs/architecture.png)
 
-Detailed architecture: `docs/architecture.mmd` and `docs/deployment.md`.
+Detailed architecture and deployment notes: `docs/architecture.mmd`, `docs/deployment.md`, and `docs/threat_model.md`.
 
 ## Security model
 

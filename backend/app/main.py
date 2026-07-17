@@ -1,19 +1,23 @@
 from __future__ import annotations
 
+import asyncio
+import json
 from datetime import datetime
 from enum import Enum
 from typing import Any
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.agent import run_incident
 from backend.app.config import settings
 from backend.app.memory import create_memory, get_memory_lineage
-from backend.app.models import MemoryRecord, RunRecord, get_db
+from backend.app.models import AsyncSessionLocal, MemoryRecord, RunRecord, get_db
 from backend.app.schemas import ActionProposal, Alert, DecisionIn, MemoryRecord as MemoryRecordSchema, Mode, RunOut
+from backend.app.skills import invoke_skill, list_skills
 
 app = FastAPI(title="TriageTrace", version="0.1.0")
 
@@ -24,6 +28,10 @@ async def health() -> dict[str, str]:
 
 
 def _json_safe(obj: Any) -> Any:
+    if hasattr(obj, "model_dump"):
+        return _json_safe(obj.model_dump())
+    if hasattr(obj, "__dict__") and not isinstance(obj, (str, bytes, int, float, bool, type(None))):
+        return _json_safe({k: v for k, v in obj.__dict__.items() if not k.startswith("_")})
     if isinstance(obj, datetime):
         return obj.isoformat()
     if isinstance(obj, Enum):
@@ -70,6 +78,56 @@ async def start_run(alert: Alert, mode: Mode = Mode.stateless, db: AsyncSession 
         proposal=run["proposal"],
         status=record.status,
     )
+
+
+async def _stream_run(alert: Alert, mode: Mode):
+    queue: asyncio.Queue[Any | None] = asyncio.Queue(maxsize=64)
+    final_result: dict[str, Any] | None = None
+
+    async def worker() -> None:
+        nonlocal final_result
+        async with AsyncSessionLocal() as db:
+            try:
+                final_result = await run_incident(db, alert, mode, event_queue=queue)
+                record = RunRecord(
+                    id=UUID(final_result["id"]),
+                    tenant=final_result["tenant"],
+                    mode=final_result["mode"],
+                    alert=final_result["alert"].model_dump(),
+                    events=_serialize_events(final_result["events"]),
+                    proposal=final_result["proposal"].model_dump() if final_result.get("proposal") else None,
+                    status="pending",
+                )
+                db.add(record)
+                await db.commit()
+            except Exception as exc:
+                await queue.put({"event_type": "run.error", "payload": {"error": str(exc)}})
+            finally:
+                await queue.put(None)
+
+    task = asyncio.create_task(worker())
+    try:
+        while True:
+            event = await queue.get()
+            if event is None:
+                break
+            data = json.dumps(_json_safe(event))
+            yield f"data: {data}\n\n"
+        if final_result:
+            final = {"event_type": "run.result", "payload": final_result}
+            yield f"data: {json.dumps(_json_safe(final))}\n\n"
+    finally:
+        if not task.done():
+            task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+
+@app.post("/api/agent/runs/stream")
+async def stream_run(alert: Alert, mode: Mode = Mode.stateless) -> StreamingResponse:
+    return StreamingResponse(_stream_run(alert, mode), media_type="text/event-stream")
 
 
 @app.get("/api/agent/runs/{run_id}")
@@ -141,6 +199,26 @@ async def decide(run_id: str, decision: DecisionIn, db: AsyncSession = Depends(g
     record.proposal = proposal.model_dump()
     await db.commit()
     return {"run_id": run_id, "approved": False, "feedback": decision.feedback, "status": "rejected"}
+
+
+@app.get("/api/skills")
+async def get_skills() -> dict[str, Any]:
+    return {"skills": list_skills()}
+
+
+@app.post("/api/skills/{name}/invoke")
+async def invoke_skill_endpoint(
+    name: str,
+    arguments: dict[str, Any],
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    try:
+        result = await invoke_skill(db, name, arguments)
+        return {"skill": name, "result": result}
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.get("/api/memories")

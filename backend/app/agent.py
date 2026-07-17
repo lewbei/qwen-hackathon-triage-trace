@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 import uuid
@@ -39,14 +40,30 @@ def _event(
     )
 
 
+def _maybe_enqueue(queue: asyncio.Queue | None, event: RunEvent) -> None:
+    if queue is not None:
+        try:
+            queue.put_nowait(event)
+        except asyncio.QueueFull:
+            pass
+
+
 async def run_incident(
     db: AsyncSession,
     alert: Alert,
     mode: Mode,
+    event_queue: asyncio.Queue | None = None,
 ) -> dict[str, Any]:
     run_id = str(uuid.uuid4())
     events: list[RunEvent] = []
-    events.append(_event(run_id, "run.started", {"mode": mode, "alert": alert.model_dump()}))
+
+    def emit(event_type: str, payload: dict[str, Any], **kwargs: Any) -> RunEvent:
+        ev = _event(run_id, event_type, payload, **kwargs)
+        events.append(ev)
+        _maybe_enqueue(event_queue, ev)
+        return ev
+
+    emit("run.started", {"mode": mode, "alert": alert.model_dump()})
 
     recalled_ids: list[str] = []
     memory_context = ""
@@ -56,9 +73,9 @@ async def run_incident(
         try:
             embeddings = await qwen.embed([f"{alert.service} {alert.symptom} {alert.context}"], dimensions=1536)
             query_embedding = embeddings[0]
-            events.append(_event(run_id, "memory.embedded", {"dim": len(query_embedding)}))
+            emit("memory.embedded", {"dim": len(query_embedding)})
         except Exception as e:
-            events.append(_event(run_id, "memory.embed_failed", {"error": str(e)}))
+            emit("memory.embed_failed", {"error": str(e)})
 
         packed, omitted, rejected, pack_meta = await retrieve_and_pack(
             db,
@@ -69,8 +86,7 @@ async def run_incident(
             budget=settings.memory_token_budget,
         )
         recalled_ids = [str(m.id) for m in packed]
-        events.append(_event(
-            run_id,
+        emit(
             "memory.packed",
             {
                 "packed": recalled_ids,
@@ -78,7 +94,7 @@ async def run_incident(
                 "rejected": [str(m.id) for m in rejected],
                 **pack_meta,
             },
-        ))
+        )
 
         memory_lines = []
         for m in packed:
@@ -103,14 +119,13 @@ async def run_incident(
     ]
 
     first = await qwen.chat(messages=messages, tools=TOOLS, tool_choice="auto")
-    events.append(_event(
-        run_id,
+    emit(
         "model.reasoning",
         {"tool_calls": first.get("tool_calls")},
         model=first.get("model"),
         token_usage=first.get("token_usage"),
         latency_ms=first.get("latency_ms"),
-    ))
+    )
 
     tool_results: list[dict[str, Any]] = []
     for tc in first.get("tool_calls", []):
@@ -118,7 +133,7 @@ async def run_incident(
         arguments = json.loads(tc["function"]["arguments"])
         result = dispatch(name, arguments)
         tool_results.append({"tool": name, "arguments": arguments, "result": result})
-    events.append(_event(run_id, "tools.called", {"results": tool_results}))
+    emit("tools.called", {"results": tool_results})
 
     messages.append({"role": "assistant", "content": None, "tool_calls": [
         {
@@ -145,14 +160,13 @@ async def run_incident(
     })
 
     second = await qwen.chat(messages=messages, temperature=0.0, max_tokens=2048)
-    events.append(_event(
-        run_id,
+    emit(
         "model.proposal",
         {"content": second.get("content")},
         model=second.get("model"),
         token_usage=second.get("token_usage"),
         latency_ms=second.get("latency_ms"),
-    ))
+    )
 
     proposal_text = second.get("content") or "{}"
     if proposal_text.startswith("```"):
@@ -190,7 +204,7 @@ async def run_incident(
     proposal = ActionProposal(**parsed)
     proposal.recalled_memory_ids = recalled_ids
 
-    return {
+    result = {
         "id": run_id,
         "tenant": alert.tenant,
         "mode": mode,
@@ -198,3 +212,5 @@ async def run_incident(
         "events": events,
         "proposal": proposal,
     }
+    emit("run.completed", {"proposal": proposal.model_dump()})
+    return result
