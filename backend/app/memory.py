@@ -330,11 +330,11 @@ def _pack_memories(
     return packed, omitted, used
 
 
-def _rerank_fallback(
+def _cosine_rerank(
     memories: list[MemoryRecord],
     query_embedding: list[float] | None,
 ) -> dict[uuid.UUID, float]:
-    """Fallback reranking using cosine similarity; replaces qwen3-rerank when unavailable or to save quota."""
+    """Fallback reranking using cosine similarity when qwen3-rerank is unavailable."""
     scores: dict[uuid.UUID, float] = {}
     for m in memories:
         if query_embedding and m.embedding:
@@ -342,6 +342,23 @@ def _rerank_fallback(
         else:
             scores[m.id] = 0.0
     return scores
+
+
+async def _qwen_rerank(
+    query_text: str,
+    memories: list[MemoryRecord],
+) -> dict[uuid.UUID, float]:
+    """Call Qwen Cloud qwen3-rerank to score memory relevance. Falls back to cosine on any error."""
+    if not memories:
+        return {}
+    documents = [m.content for m in memories]
+    try:
+        from backend.app.qwen import qwen
+        results = await qwen.rerank(query=query_text, documents=documents, top_n=len(documents))
+        # results are sorted by index; map back to memory records.
+        return {memories[r["index"]].id: r["relevance_score"] for r in results if "index" in r and "relevance_score" in r}
+    except Exception:
+        return {}
 
 
 async def retrieve_and_pack(
@@ -360,8 +377,10 @@ async def retrieve_and_pack(
     now = _now()
     candidates = await search_memories(session, tenant, scope, query_embedding, limit=candidate_limit)
 
-    # Rerank fallback (qwen3-rerank can be wired here later).
-    relevance = _rerank_fallback(candidates, query_embedding)
+    # Try Qwen Cloud qwen3-rerank first; fall back to cosine similarity.
+    relevance = await _qwen_rerank(query_text, candidates)
+    if not relevance:
+        relevance = _cosine_rerank(candidates, query_embedding)
 
     # Compute utility per candidate.
     utilities = {m.id: _compute_utility(m, relevance.get(m.id, 0.0), now) for m in candidates}

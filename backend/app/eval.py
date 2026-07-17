@@ -87,6 +87,9 @@ class MockQwen:
     async def embed(self, texts: list[str]) -> list[list[float]]:
         return [[0.0] * 1536 for _ in texts]
 
+    async def rerank(self, *, query: str, documents: list[str], top_n: int | None = None, model: str | None = None) -> list[dict[str, Any]]:
+        return []
+
 
 async def _clear_eval_memories(session: AsyncSession, tenant: str) -> None:
     await session.execute(delete(MemoryRecord).where(MemoryRecord.tenant == tenant))

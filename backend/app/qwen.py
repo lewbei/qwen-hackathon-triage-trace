@@ -4,6 +4,7 @@ import json
 import time
 from typing import Any
 
+import httpx
 from openai import AsyncOpenAI
 
 from backend.app.config import settings
@@ -99,6 +100,38 @@ class QwenGateway:
             dimensions=dimensions,
         )
         return [item.embedding for item in response.data]
+
+    async def rerank(
+        self,
+        query: str,
+        documents: list[str],
+        top_n: int | None = None,
+        model: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Call Qwen Cloud qwen3-rerank. Returns [{index, relevance_score}, ...] sorted by score."""
+        self._ensure_key()
+        top_n = top_n or len(documents)
+        payload = {
+            "model": model or settings.qwen_rerank_model,
+            "input": {
+                "query": query,
+                "documents": documents,
+            },
+            "top_n": top_n,
+        }
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                settings.qwen_rerank_url,
+                headers={
+                    "Authorization": f"Bearer {self._api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+            response.raise_for_status()
+            data = response.json()
+            results = data.get("output", {}).get("results", [])
+            return sorted(results, key=lambda r: r["index"])
 
 
 qwen = QwenGateway()

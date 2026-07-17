@@ -48,10 +48,10 @@ Results are committed to `evaluations/latest.json` and rendered below. The lates
 
 | Metric | Stateless | Memory | Δ |
 |---|---|---|---|
-| Correct-action accuracy | 30.8% | 76.9% | **+46.2%** |
+| Correct-action accuracy | 23.1% | 84.6% | **+61.5%** |
 | Policy compliance | 100% | 100% | 0% |
-| Avg latency | 28.6 s | 24.9 s | −3.7 s |
-| Avg total tokens | 2,410 | 2,271 | −139 |
+| Avg latency | 30.8 s | 26.4 s | −4.4 s |
+| Avg total tokens | 2,545 | 2,363 | −182 |
 | Avg injected memory tokens | 0 | 26 | +26 |
 | Avg recalled memory IDs | 0.0 | 1.3 | +1.3 |
 
