@@ -20,7 +20,7 @@ from backend.app.schemas import Alert
 
 class MockQwen:
     """Deterministic Qwen stand-in for evaluation. Returns unsafe baseline in stateless
-    mode and the scenario-expected action when validated memory context is present."""
+    mode and the scenario-expected action when approved-and-simulated memory context is present."""
 
     def __init__(self, scenario: dict[str, Any]) -> None:
         self.scenario = scenario
@@ -51,7 +51,7 @@ class MockQwen:
             }
 
         # Second call: produce proposal.
-        memory_present = any("Relevant validated experience" in (m.get("content") or "") for m in messages)
+        memory_present = any("Relevant approved-and-simulated experience" in (m.get("content") or "") for m in messages)
         if memory_present:
             if self.scenario.get("should_decline"):
                 action = "none"

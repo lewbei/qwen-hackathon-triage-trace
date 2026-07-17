@@ -2,7 +2,7 @@
 
 **Track 1: MemoryAgent** — Qwen Hackathon 2026
 
-TriageTrace is a temporal-memory incident-response agent that remembers operator-approved (and, where available, outcome-verified) remediations and refuses poisoned, contradictory, or obsolete memories. It uses Qwen Cloud (`qwen3.7-plus` for reasoning, `text-embedding-v4` for memory vectors, plus slots for `qwen3.6-flash` extraction and `qwen3-rerank`) to propose, refine, and audit remediations.
+TriageTrace is a temporal-memory incident-response agent that remembers operator-approved, simulation-screened remediations and refuses poisoned, contradictory, or obsolete memories. It uses Qwen Cloud (`qwen3.7-plus` for reasoning, `text-embedding-v4` for memory vectors, plus slots for `qwen3.6-flash` extraction and `qwen3-rerank`) to propose, refine, and audit remediations.
 
 ## Hosted Demo
 
@@ -17,19 +17,18 @@ cp .env.example .env
 docker compose up --build
 ```
 
-- API: `http://localhost:8000`
-- Dashboard: `http://localhost:5173`
-- Health: `GET /health`
+- Dashboard: `http://localhost:5173` (the UI proxy serves the API under `/api`)
+- Health: `GET http://localhost:5173/api/health`
 
 Run a stateless and memory incident:
 
 ```bash
-curl -s -X POST "http://localhost:8000/api/agent/runs?mode=stateless" \
+curl -s -X POST "http://localhost:5173/api/agent/runs?mode=stateless" \
   -H "Content-Type: application/json" \
   -d '{"service":"cart-service","symptom":"High error rate and slow checkout","context":"Started after Redis latency spike"}'
 
 # Approve a proposal (replace <run-id>):
-curl -s -X POST "http://localhost:8000/api/proposals/<run-id>/decision" \
+curl -s -X POST "http://localhost:5173/api/proposals/<run-id>/decision" \
   -H "Content-Type: application/json" \
   -d '{"approved":true,"feedback":"operator confirmed"}'
 ```
@@ -37,10 +36,10 @@ curl -s -X POST "http://localhost:8000/api/proposals/<run-id>/decision" \
 ## What it proves
 
 1. A stateless Qwen agent inspects fixtures and proposes a remediation.
-2. An operator approves or rejects it; the operator-approved lesson becomes a durable `procedure` or `preference` memory with a vector embedding.
+2. An operator approves or rejects it; the operator-approved lesson is screened by a simulator and, if predicted to improve metrics, becomes a durable `simulated_safe` `procedure` or `preference` memory with a vector embedding.
 3. A later incident in the same scope triggers memory retrieval: vector candidates, reranking/fallback, MMR diversity scoring, utility weighting, and 800-token packing. Policies and preferences are packed first.
-4. A newer validated procedure supersedes an older one; a memory that contradicts a higher-authority source is quarantined; a malicious instruction embedded in a log is not promoted.
-5. `POST /api/demo/reset` reseeds fixture observations without touching other tenants.
+4. A newer simulated-safe procedure supersedes an older one; a memory that contradicts a higher-authority source is quarantined; a malicious instruction embedded in a log is not promoted.
+5. `POST /api/demo/reset` (requires `DEMO_SECRET`) reseeds fixture observations in the default tenant without touching other tenants.
 
 ## Benchmarks
 
@@ -71,10 +70,10 @@ Adversarial-memory metrics:
 
 Scenario highlights:
 
-- **Repeated incidents**: stateless often returns generic or unsafe restarts; memory recalls validated procedures and produces the exact remediation.
+- **Repeated incidents**: stateless often returns generic or unsafe restarts; memory recalls approved-and-simulated procedures and produces the exact remediation.
 - **Operator-policy**: memory mode respects hard operator constraints (e.g., never restart the database, never auto-refund), while the identical stateless baseline proposes the forbidden action.
-- **Temporal conflict**: memory mode selects the newer validated procedure/runbook and supersedes stale entries; stale-memory recall is 0%.
-- **Poisoned log**: MemoryGate quarantines malicious instructions embedded in logs; the agent declines or recalls the safe validated procedure instead.
+- **Temporal conflict**: memory mode selects the newer simulated-safe procedure/runbook and supersedes stale entries; stale-memory recall is 0%.
+- **Poisoned log**: MemoryGate quarantines malicious instructions embedded in logs; the agent declines or recalls the safe simulated-safe procedure instead.
 - **Irrelevant overload**: despite five irrelevant observations seeded in the same scope, the correct procedure is recalled and the agent stays on target.
 
 Run:

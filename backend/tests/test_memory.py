@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -49,3 +51,43 @@ async def test_token_packing_respects_budget(db_session: AsyncSession):
     packed, omitted, rejected = pack_memories(memories, budget=200)
     assert len(packed) < len(memories)
     assert all(m.status == "active" for m in packed)
+
+
+@pytest.mark.asyncio
+async def test_out_of_order_memory_is_quarantined(db_session: AsyncSession):
+    """A delayed older record must not supersede the current active memory."""
+    now = datetime.now(timezone.utc)
+    current = await create_memory(
+        db_session,
+        tenant="default",
+        provenance="simulation",
+        type="procedure",
+        scope="notification-service",
+        subject="queue_backlog",
+        predicate="remediation",
+        content="Current: scale workers and requeue messages.",
+        source_authority=80,
+        source_timestamp=now,
+        embedding=[0.0] * 1536,
+        auto_embed=False,
+    )
+    assert current.status == "active"
+
+    delayed_old = await create_memory(
+        db_session,
+        tenant="default",
+        provenance="simulation",
+        type="procedure",
+        scope="notification-service",
+        subject="queue_backlog",
+        predicate="remediation",
+        content="Stale: restart all pods immediately.",
+        source_authority=80,
+        source_timestamp=now - timedelta(days=7),
+        embedding=[1.0] * 1536,
+        auto_embed=False,
+    )
+    assert delayed_old.status == "quarantined"
+    assert "stale" in (delayed_old.meta.get("quarantine_reason") or "")
+    await db_session.refresh(current)
+    assert current.status == "active"

@@ -70,7 +70,6 @@ async def apply_operator_decision(
         return {
             "run_id": str(run_record.id),
             "approved": True,
-            "validated": False,
             "simulated_safe": True,
             "feedback": feedback,
             "status": "simulated_safe",
@@ -99,7 +98,6 @@ async def apply_operator_decision(
         return {
             "run_id": str(run_record.id),
             "approved": False,
-            "validated": False,
             "simulated_safe": False,
             "feedback": feedback,
             "status": "rejected_by_simulation",
@@ -126,7 +124,6 @@ async def apply_operator_decision(
     return {
         "run_id": str(run_record.id),
         "approved": False,
-        "validated": False,
         "simulated_safe": False,
         "feedback": feedback,
         "status": "rejected",

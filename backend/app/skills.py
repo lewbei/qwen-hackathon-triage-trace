@@ -16,9 +16,9 @@ SKILL_REGISTRY: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "search_validated_memories",
+            "name": "search_approved_memories",
             "description": (
-                "Search the tenant's memory firewall for active, validated incident "
+                "Search the tenant's memory firewall for active, approved-and-simulated incident "
                 "memories (procedures, preferences, policies) relevant to a service "
                 "and incident description. Returns packed memories plus metadata "
                 "about omitted and rejected memories."
@@ -38,9 +38,9 @@ SKILL_REGISTRY: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "remember_validated_lesson",
+            "name": "remember_approved_lesson",
             "description": (
-                "Store a validated incident lesson in the memory firewall. Only operator "
+                "Store an approved-and-simulated incident lesson in the memory firewall. Only operator "
                 "or approved_execution provenance is trusted enough to become active; "
                 "untrusted sources are quarantined by MemoryGate."
             ),
@@ -76,7 +76,7 @@ async def invoke_skill(
     if name in {"inspect_metrics", "list_recent_deployments", "read_current_runbook"}:
         return dispatch_evidence(name, arguments)
 
-    if name == "search_validated_memories":
+    if name == "search_approved_memories":
         tenant = arguments["tenant"]
         service = arguments["service"]
         symptom = arguments.get("symptom", "")
@@ -107,7 +107,7 @@ async def invoke_skill(
             "meta": meta,
         }
 
-    if name == "remember_validated_lesson":
+    if name == "remember_approved_lesson":
         record = await create_memory(
             session,
             tenant=arguments["tenant"],

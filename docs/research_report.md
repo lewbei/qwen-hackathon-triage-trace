@@ -61,19 +61,19 @@ A 2026 incident-response automation guide frames the right design as **Human-in-
 - Transparency and explainability
 - Role evolution (analysts move from detection to investigation)
 
-TriageTrace already implements this: every remediation is a **proposal** pending approval, and operator feedback becomes a validated memory. ([RiseUp Labs, 2026](https://riseuplabs.com/ai-automation-for-incident-response))
+TriageTrace already implements this: every remediation is a **proposal** pending approval, and operator feedback becomes an approved-and-simulated memory. ([RiseUp Labs, 2026](https://riseuplabs.com/ai-automation-for-incident-response))
 
 ## 2. Competitive landscape: who else is doing this?
 
 | Competitor / Category | Strength | Gap vs. TriageTrace |
 |---|---|---|
 | **incident.io AI SRE** | Automates up to 80% of response, suggests fixes from past incidents | No public memory firewall, temporal conflict handling, or poisoning defense |
-| **Rootly** | Strong workflow automation, Slack-native, AI summaries | No validated memory layer or policy-contradiction quarantine |
-| **PagerDuty Operations Cloud** | Enterprise scale, end-to-end lifecycle | Expensive, does not learn validated lessons per tenant |
+| **Rootly** | Strong workflow automation, Slack-native, AI summaries | No approved-and-simulated memory layer or policy-contradiction quarantine |
+| **PagerDuty Operations Cloud** | Enterprise scale, end-to-end lifecycle | Expensive, does not learn approved-and-simulated lessons per tenant |
 | **Raven-Memory (Qwen Hackathon entrant)** | Deterministic memory substrate with forensic reasoning | General-purpose, not domain-specific, no incident-response safety controls |
 | **Academic memory-poisoning papers** | Deep threat analysis | They analyze the problem; TriageTrace ships a defensive pipeline |
 
-**Conclusion:** the intersection of **incident response + persistent validated memory + adversarial memory safety** is largely unoccupied. That is TriageTrace's defensible niche.
+**Conclusion:** the intersection of **incident response + persistent approved-and-simulated memory + adversarial memory safety** is largely unoccupied. That is TriageTrace's defensible niche.
 
 ## 3. Alignment with hackathon judging criteria
 

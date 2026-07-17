@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.agent import run_incident
 from backend.app.config import settings
 from backend.app.decisions import apply_operator_decision
-from backend.app.demo import run_accumulation_demo, run_winning_scenario
+from backend.app.demo import _scenario_tenant, run_accumulation_demo, run_winning_scenario
 from backend.app.memory import create_memory, get_memory_lineage
 from backend.app.models import AsyncSessionLocal, MemoryRecord, RunRecord, get_db
 from backend.app.schemas import (
@@ -68,6 +68,16 @@ def _client_ip(request: Request) -> str:
     return request.client.host or "unknown"
 
 
+def _is_authenticated(secret: str) -> bool:
+    """A request is authenticated when a demo secret is configured and matches."""
+    return bool(settings.demo_secret and secret == settings.demo_secret)
+
+
+def _resolve_tenant(requested: str, secret: str) -> str:
+    """Public callers may only access the default tenant; the secret unlocks others."""
+    return requested if _is_authenticated(secret) else settings.default_tenant
+
+
 async def _cleanup_demo_tenant(tenant: str) -> None:
     """Remove the transient demo tenant after the response has been sent."""
     from backend.app.models import AsyncSessionLocal
@@ -79,6 +89,7 @@ async def _cleanup_demo_tenant(tenant: str) -> None:
 
 
 @app.get("/health")
+@app.get("/api/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
 
@@ -112,7 +123,13 @@ def _serialize_events(events: list) -> list[dict[str, Any]]:
 
 
 @app.post("/api/agent/runs")
-async def start_run(alert: Alert, mode: Mode = Mode.stateless, db: AsyncSession = Depends(get_db)) -> RunOut:
+async def start_run(
+    alert: Alert,
+    mode: Mode = Mode.stateless,
+    db: AsyncSession = Depends(get_db),
+    x_demo_secret: str = Header(default=""),
+) -> RunOut:
+    alert.tenant = _resolve_tenant(alert.tenant, x_demo_secret)
     run = await run_incident(db, alert, mode)
     record = RunRecord(
         id=UUID(run["id"]),
@@ -182,14 +199,25 @@ async def _stream_run(alert: Alert, mode: Mode):
 
 
 @app.post("/api/agent/runs/stream")
-async def stream_run(alert: Alert, mode: Mode = Mode.stateless) -> StreamingResponse:
+async def stream_run(
+    alert: Alert,
+    mode: Mode = Mode.stateless,
+    x_demo_secret: str = Header(default=""),
+) -> StreamingResponse:
+    alert.tenant = _resolve_tenant(alert.tenant, x_demo_secret)
     return StreamingResponse(_stream_run(alert, mode), media_type="text/event-stream")
 
 
 @app.get("/api/agent/runs/{run_id}")
-async def get_run(run_id: str, db: AsyncSession = Depends(get_db)) -> RunOut:
+async def get_run(
+    run_id: str,
+    db: AsyncSession = Depends(get_db),
+    x_demo_secret: str = Header(default=""),
+) -> RunOut:
     record = await db.get(RunRecord, UUID(run_id))
     if not record:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if record.tenant != settings.default_tenant and not _is_authenticated(x_demo_secret):
         raise HTTPException(status_code=404, detail="Run not found")
     return RunOut(
         id=record.id,
@@ -204,17 +232,30 @@ async def get_run(run_id: str, db: AsyncSession = Depends(get_db)) -> RunOut:
 
 
 @app.get("/api/agent/runs/{run_id}/events")
-async def get_events(run_id: str, db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+async def get_events(
+    run_id: str,
+    db: AsyncSession = Depends(get_db),
+    x_demo_secret: str = Header(default=""),
+) -> dict[str, Any]:
     record = await db.get(RunRecord, UUID(run_id))
     if not record:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if record.tenant != settings.default_tenant and not _is_authenticated(x_demo_secret):
         raise HTTPException(status_code=404, detail="Run not found")
     return {"run_id": run_id, "status": record.status, "events": record.events}
 
 
 @app.post("/api/proposals/{run_id}/decision")
-async def decide(run_id: str, decision: DecisionIn, db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+async def decide(
+    run_id: str,
+    decision: DecisionIn,
+    db: AsyncSession = Depends(get_db),
+    x_demo_secret: str = Header(default=""),
+) -> dict[str, Any]:
     record = await db.get(RunRecord, UUID(run_id))
     if not record or not record.proposal:
+        raise HTTPException(status_code=404, detail="Proposal not found")
+    if record.tenant != settings.default_tenant and not _is_authenticated(x_demo_secret):
         raise HTTPException(status_code=404, detail="Proposal not found")
     return await apply_operator_decision(db, record, decision.approved, decision.feedback)
 
@@ -240,7 +281,12 @@ async def invoke_skill_endpoint(
 
 
 @app.get("/api/memories")
-async def list_memories(tenant: str = settings.default_tenant, db: AsyncSession = Depends(get_db)) -> list[MemoryRecordSchema]:
+async def list_memories(
+    tenant: str = settings.default_tenant,
+    db: AsyncSession = Depends(get_db),
+    x_demo_secret: str = Header(default=""),
+) -> list[MemoryRecordSchema]:
+    tenant = _resolve_tenant(tenant, x_demo_secret)
     result = await db.execute(
         select(MemoryRecord).where(MemoryRecord.tenant == tenant).order_by(MemoryRecord.source_timestamp.desc()).limit(100)
     )
@@ -258,15 +304,17 @@ async def add_untrusted_memory(
     predicate: str,
     content: str,
     db: AsyncSession = Depends(get_db),
+    x_demo_secret: str = Header(default=""),
 ) -> MemoryRecordSchema:
     """Accept an externally submitted memory. Trusted provenance values are never
     accepted from the client; they are overridden to external/observation so the
     memory firewall always screens the content.
     """
+    tenant = _resolve_tenant(tenant, x_demo_secret)
     # Trusted provenance values may only be set by internal server workflows
-    # (operator approval, validated sandbox execution, etc.). A public caller cannot
+    # (operator approval, simulated sandbox execution, etc.). A public caller cannot
     # bypass the poison gate by claiming trusted origin.
-    trusted_provenances = {"operator", "approved_execution", "validated_execution", "runbook"}
+    trusted_provenances = {"operator", "approved_execution", "runbook", "simulation"}
     if provenance in trusted_provenances or type in ("procedure", "policy"):
         # Force the submission into the untrusted external observation path.
         provenance = "external"
@@ -290,7 +338,13 @@ async def add_untrusted_memory(
 
 
 @app.get("/api/memories/{memory_id}/lineage")
-async def memory_lineage(memory_id: str, tenant: str = settings.default_tenant, db: AsyncSession = Depends(get_db)) -> list[MemoryRecordSchema]:
+async def memory_lineage(
+    memory_id: str,
+    tenant: str = settings.default_tenant,
+    db: AsyncSession = Depends(get_db),
+    x_demo_secret: str = Header(default=""),
+) -> list[MemoryRecordSchema]:
+    tenant = _resolve_tenant(tenant, x_demo_secret)
     try:
         mem_id = UUID(memory_id)
     except ValueError:
@@ -307,8 +361,8 @@ async def delete_memory(
     db: AsyncSession = Depends(get_db),
     x_demo_secret: str = Header(default=""),
 ) -> dict[str, str]:
-    """Mark a memory as deleted. If a demo secret is configured, require it."""
-    if settings.demo_secret and x_demo_secret != settings.demo_secret:
+    """Mark a memory as deleted. Always requires the configured demo secret."""
+    if not settings.demo_secret or x_demo_secret != settings.demo_secret:
         raise HTTPException(status_code=403, detail="invalid demo secret")
     record = await db.get(MemoryRecord, UUID(memory_id))
     if not record:
@@ -358,9 +412,8 @@ async def demo_reset(
     db: AsyncSession = Depends(get_db),
     x_demo_secret: str = Header(default=""),
 ) -> dict[str, Any]:
-    # In production, require the configured demo secret. In development/demo,
-    # reset is allowed without a secret so the quickstart and hackathon demo work.
-    if settings.app_env == "production" and (not settings.demo_secret or x_demo_secret != settings.demo_secret):
+    # Reset is a destructive operation and always requires the configured demo secret.
+    if not settings.demo_secret or x_demo_secret != settings.demo_secret:
         raise HTTPException(status_code=403, detail="invalid demo secret")
     tenant = settings.default_tenant
     await db.execute(delete(MemoryRecord).where(MemoryRecord.tenant == tenant))
@@ -387,8 +440,13 @@ async def winning_scenario(
     """
     if not _demo_limiter.allow(_client_ip(request)):
         raise HTTPException(status_code=429, detail="Too many demo requests. Please wait a minute.")
-    result = await run_winning_scenario(db)
-    background_tasks.add_task(_cleanup_demo_tenant, result["tenant"])
+    tenant = _scenario_tenant()
+    try:
+        result = await run_winning_scenario(db, tenant=tenant)
+    except Exception:
+        await _cleanup_demo_tenant(tenant)
+        raise
+    background_tasks.add_task(_cleanup_demo_tenant, tenant)
     return result
 
 
@@ -406,6 +464,11 @@ async def accumulation(
     """
     if not _demo_limiter.allow(_client_ip(request)):
         raise HTTPException(status_code=429, detail="Too many demo requests. Please wait a minute.")
-    result = await run_accumulation_demo(db)
-    background_tasks.add_task(_cleanup_demo_tenant, result["tenant"])
+    tenant = _scenario_tenant()
+    try:
+        result = await run_accumulation_demo(db, tenant=tenant)
+    except Exception:
+        await _cleanup_demo_tenant(tenant)
+        raise
+    background_tasks.add_task(_cleanup_demo_tenant, tenant)
     return result

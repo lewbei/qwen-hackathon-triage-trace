@@ -197,7 +197,7 @@ export default function WinningDemo() {
             </div>
             <p className="text-xs text-gray-600 mt-2">
               Recalled IDs: {scenario.summary.recalled_ids.length > 0 ? scenario.summary.recalled_ids.join(', ') : 'none'}.
-              The firewall packed the validated procedure and rejected the superseded old procedure plus the quarantined poison.
+              The firewall packed the simulated-safe procedure and rejected the superseded old procedure plus the quarantined poison.
             </p>
           </div>
         </div>

@@ -146,7 +146,7 @@ def _policy_contradiction(content: str, policy_content: str) -> str | None:
 async def _memory_gate(session: AsyncSession, record: MemoryRecord) -> bool:
     """Validate a memory before it is persisted. Returns True if accepted."""
     # Trusted sources bypass heuristic checks, but still respect active policies.
-    trusted = record.provenance in ("operator", "approved_execution", "validated_execution")
+    trusted = record.provenance in ("operator", "approved_execution")
 
     if not trusted:
         poison = _detect_poison(record.content)
@@ -233,6 +233,9 @@ async def create_memory(
         return record
 
     # Lifecycle: compare with active existing memories of same scope/subject.
+    # A record supersedes the current active memory only when it has higher
+    # authority, OR equal authority and a strictly newer source_timestamp.
+    # Out-of-order or equal-timestamp arrivals are quarantined as stale.
     existing = await session.execute(
         select(MemoryRecord).where(
             MemoryRecord.tenant == tenant,
@@ -243,19 +246,25 @@ async def create_memory(
         )
     )
     existing_rows = list(existing.scalars().all())
-    for old in existing_rows:
-        if old.content == record.content:
-            # duplicate
+    if existing_rows:
+        # The record to beat is the strongest active memory by (authority, timestamp).
+        strongest = max(existing_rows, key=lambda m: (m.source_authority, m.source_timestamp or _now()))
+        if any(o.content == record.content for o in existing_rows):
             record.status = "quarantined"
             record.meta["quarantine_reason"] = "duplicate"
-            break
-        if old.source_authority > record.source_authority:
+        elif record.source_authority < strongest.source_authority:
             record.status = "quarantined"
             record.meta["quarantine_reason"] = "lower authority than existing"
-            break
-        if old.source_authority <= record.source_authority:
-            old.status = "superseded"
-            record.supersedes_id = old.id
+        elif (
+            record.source_authority == strongest.source_authority
+            and (record.source_timestamp or _now()) <= (strongest.source_timestamp or _now())
+        ):
+            record.status = "quarantined"
+            record.meta["quarantine_reason"] = "stale or out-of-order"
+        else:
+            for old in existing_rows:
+                old.status = "superseded"
+            record.supersedes_id = strongest.id
             record.status = "active"
     if record.status == "candidate" and type in ("preference", "policy"):
         record.status = "active"

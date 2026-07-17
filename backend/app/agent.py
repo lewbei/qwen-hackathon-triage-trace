@@ -168,7 +168,7 @@ async def run_incident(
         "If the service is unknown or evidence is insufficient, set insufficient_evidence to true."
     )
     if memory_context:
-        system += f"\n\nRelevant validated experience (under {settings.memory_token_budget} tokens):\n{memory_context}"
+        system += f"\n\nRelevant approved-and-simulated experience (under {settings.memory_token_budget} tokens):\n{memory_context}"
 
     user = f"Incident on service '{alert.service}': {alert.symptom}. Context: {alert.context}"
     messages = [

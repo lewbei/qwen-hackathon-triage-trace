@@ -19,8 +19,10 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    ports:
-      - "8000:8000"
+    # Do not expose 8000 externally. API traffic must go through the UI/nginx proxy
+    # so that rate-limiting headers and tenant isolation can be enforced.
+    expose:
+      - "8000"
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/triagetrace
     env_file:

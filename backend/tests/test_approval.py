@@ -59,7 +59,6 @@ async def test_approved_simulated_safe_run_creates_memory(db_session):
     assert decision.status_code == 200
     data = decision.json()
     assert data["status"] == "simulated_safe"
-    assert data["validated"] is False
     assert data["simulated_safe"] is True
     assert data["outcome"]["improved"] is True
     assert "memory_id" in data
@@ -120,5 +119,5 @@ async def test_approved_run_rejected_by_bad_simulation(db_session):
     assert decision.status_code == 200
     data = decision.json()
     assert data["status"] == "rejected_by_simulation"
-    assert data["validated"] is False
+    assert data["simulated_safe"] is False
     assert data["outcome"]["improved"] is False

@@ -1,6 +1,6 @@
 # TriageTrace Architecture
 
-TriageTrace is a **temporal memory firewall for incident-response agents**. It wraps Qwen Cloud models with a persistent, validated, adversarially-hardened memory layer.
+TriageTrace is a **temporal memory firewall for incident-response agents**. It wraps Qwen Cloud models with a persistent, approved-and-simulated, adversarially-hardened memory layer.
 
 ## Components
 
@@ -22,7 +22,7 @@ TriageTrace is a **temporal memory firewall for incident-response agents**. It w
 3. `memory.py` searches the vector index, reranks, scores utility, applies MMR, and packs under `MEMORY_TOKEN_BUDGET`.
 4. The agent invokes evidence tools (`inspect_metrics`, `read_current_runbook`, etc.).
 5. Qwen3.7-plus produces an `ActionProposal` with `approval_required: true`.
-6. `POST /api/proposals/{id}/decision` records operator approval/rejection and writes a validated memory.
+6. `POST /api/proposals/{id}/decision` records operator approval/rejection and writes a simulated-safe memory.
 7. All events are persisted in `RunRecord` and can be streamed via SSE.
 
 ## Memory lifecycle
@@ -38,7 +38,8 @@ candidate
 
 active
    │
-   ├─ newer equal-or-higher authority ──► superseded
+   ├─ higher authority, OR equal authority + newer timestamp ──► superseded
+   ├─ lower authority or out-of-order timestamp ──► quarantined
    ├─ TTL expires ──► expired
    └─ operator delete ──► deleted
 ```
@@ -46,7 +47,7 @@ active
 ## Key design decisions
 
 - **No autonomous execution:** every remediation is a proposal awaiting operator approval.
-- **Provenance-first trust:** `operator` and `approved_execution` provenance bypass heuristic poison checks because they are validated human or gated outputs.
+- **Provenance-first trust:** `operator` and `approved_execution` provenance bypass heuristic poison checks because they are approved human or gated outputs.
 - **Policy packing priority:** active `policy` memories are packed before `preference`/`procedure` memories so the model sees governance constraints first.
 - **Token budget enforcement:** memory context is strictly bounded, with omitted and rejected memories reported for audit.
 

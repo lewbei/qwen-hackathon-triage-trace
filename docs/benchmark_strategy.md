@@ -10,7 +10,7 @@ TriageTrace is now evaluated on three surfaces:
 
 || Category | Count | What it stresses |
 |---|---|---|---|
-|| Repeated incident | 4 | Recalling a validated remediation under a token budget |
+|| Repeated incident | 4 | Recalling a simulated-safe remediation under a token budget |
 || Operator-policy override | 3 | Enforcing hard operator constraints (e.g., never restart DB) |
 || Temporal conflict | 3 | Superseding an old procedure with a newer runbook |
 || Poisoned log | 2 | Ignoring malicious instructions embedded in untrusted logs |
@@ -42,7 +42,7 @@ Zero false positives on normal tools is the key result; the false negatives are 
 
 This confirms reasoning is strong once the relevant facts are surfaced, and it identifies multi-hop retrieval as the next bottleneck.
 
-**Why still keep a custom suite?** No public benchmark currently covers the intersection of real-world incident-response workflow, persistent validated memory, temporal supersession, adversarial memory poisoning, and human-in-the-loop approval. The public benchmarks give externally comparable numbers; the custom suite isolates the specific memory-firewall behaviors TriageTrace ships.
+**Why still keep a custom suite?** No public benchmark currently covers the intersection of real-world incident-response workflow, persistent approved-and-simulated memory, temporal supersession, adversarial memory poisoning, and human-in-the-loop approval. The public benchmarks give externally comparable numbers; the custom suite isolates the specific memory-firewall behaviors TriageTrace ships.
 
 ## 2. Public benchmarks that fit
 

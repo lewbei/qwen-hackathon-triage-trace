@@ -89,20 +89,6 @@ function App() {
     if (res.ok) setMemories(await res.json())
   }
 
-  const resetDemo = async () => {
-    setLoading(true)
-    const res = await fetch('/api/demo/reset', { method: 'POST' })
-    if (res.ok) {
-      await loadMemories()
-      setResult(null)
-      setEvents([])
-      setRunId(null)
-      setPackMeta(null)
-      setOutcome(null)
-    }
-    setLoading(false)
-  }
-
   useEffect(() => {
     loadMemories()
   }, [])
@@ -165,7 +151,6 @@ function App() {
           <h1 className="text-3xl font-bold">TriageTrace</h1>
           <p className="text-sm text-gray-600">A temporal memory firewall for incident-response agents.</p>
         </div>
-        <button className="text-sm bg-slate-200 px-3 py-1 rounded" onClick={resetDemo} disabled={loading}>Reset Demo</button>
       </div>
       <WinningDemo />
       <AccumulationDemo />

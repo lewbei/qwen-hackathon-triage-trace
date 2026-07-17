@@ -37,7 +37,7 @@ That maps almost one-to-one to TriageTrace's core mechanics:
 
 ### Adjacent projects outside the hackathon
 
-- **Incident-response agents with RAG** (e.g., Augmentcode guide): retrieve runbooks and incident reports. They treat memory as read-only context, not as a learned, validated, adversarially-hardened memory layer. ([Augmentcode guide](https://www.augmentcode.com/guides/ai-agents-incident-management))
+- **Incident-response agents with RAG** (e.g., Augmentcode guide): retrieve runbooks and incident reports. They treat memory as read-only context, not as a learned, approved-and-simulated, adversarially-hardened memory layer. ([Augmentcode guide](https://www.augmentcode.com/guides/ai-agents-incident-management))
 - **Temporal AI Agents / Kore.ai**: discuss time-aware memory and RAG-memory hybridity, but do not implement a validation gate or poison-quarantine for memory writes. ([Cobus Greyling, Medium 2025](https://cobusgreyling.medium.com/temporal-ai-agents-311d950381c1); [Kore.ai blog](https://www.kore.ai/blog/what-is-ai-agent-memory))
 - **Memory poisoning research**: `AGENTPOISON`, `MINJA`, and the Coalition for Secure AI's *AI Incident Response Framework v1.0* describe the attack but do not ship a defensive memory pipeline. ([arXiv:2605.15338](https://arxiv.org/html/2605.15338v2); [Coalition for Secure AI PDF](https://www.coalitionforsecureai.org/wp-content/uploads/2026/03/AI-Incident-Response-1.pdf))
 
