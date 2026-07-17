@@ -85,6 +85,8 @@ Run the live Qwen evaluation:
 python backend/scripts/evaluate.py --live
 ```
 
+See `docs/benchmark_strategy.md` for how this custom adversarial suite maps to public benchmarks such as MemoryAgentBench, AgentSecurityBench (ASB), SREGym, and ITBench.
+
 ## Architecture
 
 ![Architecture](docs/architecture.png)
