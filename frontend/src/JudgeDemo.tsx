@@ -72,7 +72,13 @@ function statusClass(status: string) {
   return 'bg-gray-100'
 }
 
-export default function WinningDemo() {
+const PHASES: { key: keyof Scenario['memories']; label: string; desc: string }[] = [
+  { key: 'old', label: 'Session 1 — Older approved procedure', desc: 'Stored first; later superseded by a newer, safer procedure.' },
+  { key: 'new', label: 'Session 2 — Newer safe procedure', desc: 'Approved-and-simulated; supersedes the older procedure.' },
+  { key: 'poison', label: 'Session 3 — Poison attempt', desc: 'Untrusted external instruction is quarantined.' },
+]
+
+export default function JudgeDemo() {
   const [scenario, setScenario] = useState<Scenario | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -80,8 +86,9 @@ export default function WinningDemo() {
   const runScenario = async () => {
     setLoading(true)
     setError(null)
+    setScenario(null)
     try {
-      const res = await fetch('/api/demo/winning-scenario', { method: 'POST' })
+      const res = await fetch('/api/demo/judge', { method: 'POST' })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       setScenario(await res.json())
     } catch (err: any) {
@@ -91,15 +98,13 @@ export default function WinningDemo() {
     }
   }
 
-  const memOrder: (keyof Scenario['memories'])[] = ['old', 'new', 'poison']
-
   return (
     <div className="bg-white p-6 rounded shadow mb-6">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-xl font-bold">Memory Firewall Demo</h2>
+          <h2 className="text-xl font-bold">Judge Demo: Temporal Memory Firewall</h2>
           <p className="text-sm text-gray-600">
-            Temporal supersession, poison quarantine, and simulated-safe memory recall on a fresh isolated tenant.
+            One coherent flow: prior approved-and-simulated sessions, supersession, poison quarantine, and a fresh incident response.
           </p>
         </div>
         <button
@@ -107,14 +112,14 @@ export default function WinningDemo() {
           onClick={runScenario}
           disabled={loading}
         >
-          {loading ? 'Running...' : 'Run Controlled Demo'}
+          {loading ? 'Running...' : 'Run Judge Demo'}
         </button>
       </div>
 
       {error && <p className="text-red-600 text-sm mb-4">{error}</p>}
 
       {!scenario && !loading && (
-        <p className="text-gray-500 text-sm">Click the button to run the isolated demo scenario.</p>
+        <p className="text-gray-500 text-sm">Click the button to run the judge-facing demo on a fresh isolated tenant.</p>
       )}
 
       {scenario && (
@@ -123,25 +128,23 @@ export default function WinningDemo() {
             {scenario.summary.demo_passed ? 'PASS' : 'FAIL'} — Memory firewall: {scenario.summary.memory_firewall_passed ? 'PASS' : 'FAIL'}; Agent behaviour: {scenario.summary.agent_behaviour_passed ? 'PASS' : 'FAIL'}.
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {memOrder.map((key) => {
-              const m = scenario.memories[key]
+          <div className="relative border-l-2 border-indigo-200 ml-3 space-y-6 pl-6">
+            {PHASES.map((phase, idx) => {
+              const m = scenario.memories[phase.key]
               return (
-                <div key={key} className="border rounded p-3">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="font-semibold capitalize">{key}</span>
-                    <span className={`px-2 py-0.5 rounded text-xs ${statusClass(m.status)}`}>{m.status}</span>
-                  </div>
-                  <p className="text-xs text-gray-600 line-clamp-4" title={m.content}>{m.content}</p>
-                  <p className="text-xs text-gray-500 mt-2">authority={m.source_authority}</p>
+                <div key={phase.key} className="relative">
+                  <span className="absolute -left-[31px] top-0 flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 text-white text-xs">{idx + 1}</span>
+                  <h3 className="font-semibold text-sm">{phase.label}</h3>
+                  <p className="text-xs text-gray-500">{phase.desc}</p>
+                  <p className="text-xs text-gray-600 line-clamp-3 mt-1" title={m.content}>{m.content}</p>
+                  <span className={`inline-block mt-1 px-2 py-0.5 rounded text-xs ${statusClass(m.status)}`}>{m.status}</span>
                 </div>
               )
             })}
-            <div className="border rounded p-3 bg-indigo-50">
-              <p className="font-semibold text-sm mb-1">Incident</p>
-              <p className="text-xs text-gray-700 line-clamp-3" title={scenario.alert.context}>
-                {scenario.alert.symptom}: {scenario.alert.context}
-              </p>
+            <div className="relative">
+              <span className="absolute -left-[31px] top-0 flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white text-xs">4</span>
+              <h3 className="font-semibold text-sm">Session 4 — Fresh incident</h3>
+              <p className="text-xs text-gray-600">{scenario.alert.symptom}: {scenario.alert.context}</p>
             </div>
           </div>
 
@@ -164,9 +167,7 @@ export default function WinningDemo() {
                   Recalled memory: <span className="font-mono">{scenario.recalled_memory.id.slice(0, 8)}</span>
                 </p>
               ) : (
-                <p className="text-xs text-red-600 mt-2">
-                  Warning: expected memory was not in the actual recall trace.
-                </p>
+                <p className="text-xs text-red-600 mt-2">Warning: expected memory was not in the actual recall trace.</p>
               )}
             </div>
           </div>
@@ -197,7 +198,6 @@ export default function WinningDemo() {
             </div>
             <p className="text-xs text-gray-600 mt-2">
               Recalled IDs: {scenario.summary.recalled_ids.length > 0 ? scenario.summary.recalled_ids.join(', ') : 'none'}.
-              The firewall packed the simulated-safe procedure and rejected the superseded old procedure plus the quarantined poison.
             </p>
           </div>
         </div>

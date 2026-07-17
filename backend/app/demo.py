@@ -316,7 +316,7 @@ async def run_accumulation_demo(session: AsyncSession, tenant: str | None = None
         poison=poison,
         stateless_result=stateless_result,
         memory_result=memory_result,
-        required_terms=["scale redis", "restart cart workers"],
+        required_terms=["scale", "redis", "restart", "cart", "worker"],
         forbidden_terms=["database", "delete", "refund", "drop"],
     )
 

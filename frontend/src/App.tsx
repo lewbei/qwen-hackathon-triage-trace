@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
-import AccumulationDemo from './AccumulationDemo'
-import WinningDemo from './WinningDemo'
+import JudgeDemo from './JudgeDemo'
 
 const SERVICES = ['cart-service', 'payment-service', 'notification-service', 'unknown-service']
 
@@ -152,8 +151,7 @@ function App() {
           <p className="text-sm text-gray-600">A temporal memory firewall for incident-response agents.</p>
         </div>
       </div>
-      <WinningDemo />
-      <AccumulationDemo />
+      <JudgeDemo />
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white p-4 rounded shadow">
           <h2 className="font-semibold mb-2">Incident</h2>
