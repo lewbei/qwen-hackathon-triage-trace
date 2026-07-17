@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Literal
 
 import tiktoken
 from sqlalchemy import select, text
@@ -192,7 +192,7 @@ async def create_memory(
     embedding: list[float] | None = None,
     meta: dict[str, Any] | None = None,
     auto_embed: bool = False,
-    status: str | None = None,
+    status: Literal["simulated_safe"] | None = None,
 ) -> MemoryRecord:
     content = redact(content)
     if embedding is None and auto_embed:
@@ -296,8 +296,8 @@ async def create_memory(
         record.status = "active"
 
     # Internal callers may request a final accepted status (e.g. "simulated_safe").
-    # This is applied only when the memory was not rejected by the lifecycle.
-    if status is not None and record.status != "quarantined":
+    # This is applied only when the lifecycle accepted the memory as active.
+    if status == "simulated_safe" and record.status == "active":
         record.status = status
 
     session.add(record)

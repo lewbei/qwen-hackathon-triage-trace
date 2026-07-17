@@ -243,6 +243,19 @@ async def test_demo_endpoints_run_and_cleanup(db_session, monkeypatch):
         AsyncMock(return_value=[[0.0] * 1536, [1.0] * 1536, [-1.0] * 1536]),
     )
 
+    cleanup_tenants: list[str] = []
+
+    async def tracked_cleanup(tenant: str) -> None:
+        """Record the cleanup call and perform deletion with the test session."""
+        cleanup_tenants.append(tenant)
+        from sqlalchemy import delete
+
+        await db_session.execute(delete(MemoryRecord).where(MemoryRecord.tenant == tenant))
+        await db_session.execute(delete(RunRecord).where(RunRecord.tenant == tenant))
+        await db_session.commit()
+
+    monkeypatch.setattr(main_module, "_cleanup_demo_tenant", tracked_cleanup)
+
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         winning = await client.post("/api/demo/winning-scenario")
         accumulation = await client.post("/api/demo/accumulation")
@@ -255,3 +268,81 @@ async def test_demo_endpoints_run_and_cleanup(db_session, monkeypatch):
         assert data["summary"]["memory_firewall_passed"] is True
         assert data["summary"]["agent_behaviour_passed"] is True
         assert data["summary"]["demo_passed"] is True
+        tenant = data["tenant"]
+        assert tenant in cleanup_tenants
+        assert await _count_tenant_records(db_session, tenant) == (0, 0)
+
+
+async def _count_tenant_records(db_session, tenant: str) -> tuple[int, int]:
+    from sqlalchemy import func, select
+
+    mem_count = await db_session.scalar(
+        select(func.count()).select_from(MemoryRecord).where(MemoryRecord.tenant == tenant)
+    )
+    run_count = await db_session.scalar(
+        select(func.count()).select_from(RunRecord).where(RunRecord.tenant == tenant)
+    )
+    return mem_count or 0, run_count or 0
+
+
+@pytest.mark.asyncio
+async def test_demo_exception_cleanup(db_session, monkeypatch):
+    """If the scenario raises, the endpoint must still delete the transient tenant."""
+    scenario_tenant = "test-exception-cleanup"
+    cleanup_called: list[str] = []
+
+    async def tracked_cleanup(tenant: str) -> None:
+        cleanup_called.append(tenant)
+        from sqlalchemy import delete
+
+        await db_session.execute(delete(MemoryRecord).where(MemoryRecord.tenant == tenant))
+        await db_session.execute(delete(RunRecord).where(RunRecord.tenant == tenant))
+        await db_session.commit()
+
+    monkeypatch.setattr(main_module, "_scenario_tenant", lambda: scenario_tenant)
+    monkeypatch.setattr(main_module, "_cleanup_demo_tenant", tracked_cleanup)
+
+    async def failing_scenario(session, tenant):
+        # Insert records before raising so we can verify cleanup actually removes them.
+        from datetime import datetime, timezone
+        from uuid import uuid4
+
+        session.add(
+            MemoryRecord(
+                id=uuid4(),
+                tenant=tenant,
+                provenance="external",
+                type="observation",
+                scope="test-service",
+                subject="test-subject",
+                predicate="test-predicate",
+                content="transient record",
+                embedding=None,
+                token_count=10,
+                status="active",
+            )
+        )
+        session.add(
+            RunRecord(
+                id=uuid4(),
+                tenant=tenant,
+                mode="memory",
+                alert={},
+                proposal=None,
+                events=[],
+                status="running",
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            )
+        )
+        await session.commit()
+        raise RuntimeError("simulated scenario failure")
+
+    monkeypatch.setattr(main_module, "run_winning_scenario", failing_scenario)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        with pytest.raises(RuntimeError):
+            await client.post("/api/demo/winning-scenario")
+
+    assert cleanup_called == [scenario_tenant]
+    assert await _count_tenant_records(db_session, scenario_tenant) == (0, 0)

@@ -5,10 +5,23 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.memory import create_memory
-from backend.app.models import RunRecord
+from backend.app.memory import ACTIVE_STATUSES, create_memory
+from backend.app.models import MemoryRecord, RunRecord
 from backend.app.schemas import ActionProposal, Alert
 from backend.app.simulate import simulate_action
+
+
+def _memory_disposition(memory: MemoryRecord) -> dict[str, Any]:
+    """Return a stable, auditable summary of how the lifecycle treated the memory."""
+    accepted = memory.status in ACTIVE_STATUSES
+    return {
+        "memory_accepted": accepted,
+        "memory_status": memory.status,
+        "memory_rejection_reason": (
+            memory.meta.get("quarantine_reason") if not accepted else None
+        ),
+        "memory_id": str(memory.id),
+    }
 
 
 async def apply_operator_decision(
@@ -74,6 +87,7 @@ async def apply_operator_decision(
         proposal.status = memory.status
         run_record.status = memory.status
         run_record.proposal = proposal.model_dump()
+        run_record.decision = {**run_record.decision, "memory": _memory_disposition(memory)}
         await session.commit()
         return {
             "run_id": str(run_record.id),
@@ -82,6 +96,9 @@ async def apply_operator_decision(
             "feedback": feedback,
             "status": memory.status,
             "memory_id": str(memory.id),
+            "memory_accepted": memory.status in ACTIVE_STATUSES,
+            "memory_status": memory.status,
+            "memory_rejection_reason": _memory_disposition(memory)["memory_rejection_reason"],
             "outcome": outcome,
         }
 
@@ -89,7 +106,7 @@ async def apply_operator_decision(
     if approved:
         proposal.status = "rejected_by_simulation"
         run_record.status = "rejected_by_simulation"
-        await create_memory(
+        memory = await create_memory(
             session,
             tenant=run_record.tenant,
             provenance="failed_execution",
@@ -102,6 +119,7 @@ async def apply_operator_decision(
             auto_embed=True,
         )
         run_record.proposal = proposal.model_dump()
+        run_record.decision = {**run_record.decision, "memory": _memory_disposition(memory)}
         await session.commit()
         return {
             "run_id": str(run_record.id),
@@ -109,13 +127,17 @@ async def apply_operator_decision(
             "simulated_safe": False,
             "feedback": feedback,
             "status": "rejected_by_simulation",
+            "memory_id": str(memory.id),
+            "memory_accepted": memory.status in ACTIVE_STATUSES,
+            "memory_status": memory.status,
+            "memory_rejection_reason": None,
             "outcome": outcome,
         }
 
     # Operator explicitly rejected the proposal.
     proposal.status = "rejected"
     run_record.status = "rejected"
-    await create_memory(
+    memory = await create_memory(
         session,
         tenant=run_record.tenant,
         provenance="operator",
@@ -128,6 +150,7 @@ async def apply_operator_decision(
         auto_embed=True,
     )
     run_record.proposal = proposal.model_dump()
+    run_record.decision = {**run_record.decision, "memory": _memory_disposition(memory)}
     await session.commit()
     return {
         "run_id": str(run_record.id),
@@ -135,5 +158,9 @@ async def apply_operator_decision(
         "simulated_safe": False,
         "feedback": feedback,
         "status": "rejected",
+        "memory_id": str(memory.id),
+        "memory_accepted": memory.status in ACTIVE_STATUSES,
+        "memory_status": memory.status,
+        "memory_rejection_reason": None,
         "outcome": outcome,
     }
