@@ -1,0 +1,54 @@
+{
+  "split": "Conflict_Resolution",
+  "samples": 1,
+  "questions": 5,
+  "correct": 4,
+  "accuracy": 0.8,
+  "details": [
+    {
+      "question": "What is the country of citizenship of the spouse of the author of Our Mutual Friend?",
+      "prediction": "<reasoning>\n1. Identify the author of \"Our Mutual Friend\": The facts state \"The author of Our Mutual Friend is Charles Dickens\" and later \"The author of Our Mutual Friend is Charles Darwin\". Following the rule to trust the most recent fact in case of a conflict, the author is Charles Darwin.\n2. Identify the spouse of Charles Darwin: The facts state \"Charles Darwin is married to Emma Darwin\" and later \"Charles Darwin is married to Amala Paul\". Trusting the most recent fact, the spouse is Amala Paul.\n3. Identify the country of citizenship of Amala Paul: The facts state \"Amala Paul is a citizen of Belgium\" and later \"Amala Paul is a citizen of India\". Trusting the most recent fact, her country of citizenship is India.\n</reasoning>\nFinal Answer: India",
+      "answers": [
+        "Belgium"
+      ],
+      "matched": true,
+      "recalled": 455
+    },
+    {
+      "question": "In which location did the spouse of Igor of Kiev pass away?",
+      "prediction": "<reasoning>\n1. Identify the spouse of Igor of Kiev: The facts state \"Igor of Kiev is married to Olga of Kiev.\" Thus, the spouse is Olga of Kiev.\n2. Determine where Olga of Kiev passed away: There are two conflicting facts regarding her death location: \"Olga of Kiev died in the city of Kyiv\" and \"Olga of Kiev died in the city of Rodez.\"\n3. Apply the rule for conflicting facts: The instructions state to trust the most recent fact. The fact \"Olga of Kiev died in the city of Rodez\" appears after the one mentioning Kyiv.\n4. Conclude the location: Based on the most recent fact, Olga of Kiev died in the city of Rodez.\n</reasoning>\nFinal Answer: Rodez",
+      "answers": [
+        "Rodez"
+      ],
+      "matched": true,
+      "recalled": 455
+    },
+    {
+      "question": "Which country is the birthplace of the sport associated with Steve Sax?",
+      "prediction": "<reasoning>\n1. Identify the sports associated with Steve Sax from the facts: baseball and association football.\n2. Identify the countries where these sports were created:\n   - For baseball: Japan and United States of America.\n   - For association football: Italy and England.\n3. Apply the rule \"If the facts conflict, trust the most recent fact\":\n   - The most recent fact for baseball is that it was created in the United States of America.\n   - The most recent fact for association football is that it was created in England.\n4. Since baseball is the first sport listed for Steve Sax and its most recent conflicting fact points to the United States of America, we select the United States of America as the birthplace of the sport.\n</reasoning>\nFinal Answer: United States of America",
+      "answers": [
+        "Italy"
+      ],
+      "matched": true,
+      "recalled": 455
+    },
+    {
+      "question": "Which city serves as the capital of the country of origin for the sport of the Tunisia national football team?",
+      "prediction": "<reasoning>\n1. Identify the sport associated with the Tunisia national football team: The facts state that the Tunisia national football team is associated with the sport of association football (and basketball, but \"football team\" directly points to association football).\n2. Determine the country of origin for association football: The facts state that association football was created in Italy and later state that it was created in England. Following the rule to trust the most recent fact when there is a conflict, the country of origin is England.\n3. Find the capital of England: The facts state that the capital of England is London.\n</reasoning>\nFinal Answer: London",
+      "answers": [
+        "Russellville"
+      ],
+      "matched": false,
+      "recalled": 455
+    },
+    {
+      "question": "What is the sport that Blair Walsh plays in which he is known for his position on the team?",
+      "prediction": "<reasoning>\n1. Identify the position Blair Walsh plays: The facts state that \"Blair Walsh plays the position of placekicker.\"\n2. Identify the sport associated with this position: The facts state that \"placekicker is associated with the sport of American football.\" (It is also associated with rugby, but American football is the primary sport for this position in the context of the other American football positions listed like quarterback, wide receiver, and cornerback).\n3. Conclude the sport: Blair Walsh plays American football.\n</reasoning>\nFinal Answer: American football",
+      "answers": [
+        "rugby"
+      ],
+      "matched": true,
+      "recalled": 455
+    }
+  ]
+}

@@ -4,27 +4,45 @@
 
 ## 1. What we tested so far
 
-So far TriageTrace has been evaluated on a **custom, hand-written adversarial scenario suite** (`backend/evaluations/scenarios.json`, 13 scenarios):
+TriageTrace is now evaluated on three surfaces:
 
-| Category | Count | What it stresses |
-|---|---|---|
-| Repeated incident | 4 | Recalling a validated remediation under a token budget |
-| Operator-policy override | 3 | Enforcing hard operator constraints (e.g., never restart DB) |
-| Temporal conflict | 3 | Superseding an old procedure with a newer runbook |
-| Poisoned log | 2 | Ignoring malicious instructions embedded in untrusted logs |
-| Irrelevant overload | 1 | Retrieving the correct memory among five irrelevant observations |
+1. **Custom, hand-written adversarial scenario suite** (`backend/evaluations/scenarios.json`, 13 scenarios):
+
+|| Category | Count | What it stresses |
+|---|---|---|---|
+|| Repeated incident | 4 | Recalling a validated remediation under a token budget |
+|| Operator-policy override | 3 | Enforcing hard operator constraints (e.g., never restart DB) |
+|| Temporal conflict | 3 | Superseding an old procedure with a newer runbook |
+|| Poisoned log | 2 | Ignoring malicious instructions embedded in untrusted logs |
+|| Irrelevant overload | 1 | Retrieving the correct memory among five irrelevant observations |
 
 Metrics: correct-action accuracy, policy compliance, latency, tokens, poison/stale recall rates, temporal correctness, and irrelevant-memory intrusion. The latest live run with `qwen3-rerank` is **stateless 23.1% → memory 84.6% accuracy**.
 
-**Why a custom suite?** No public benchmark currently covers the *intersection* of:
+2. **AgentSecurityBench (ASB) memory-poisoning gate** (`backend/evaluations/benchmarks/asb_memorygate.py`):
 
-- real-world incident response workflow,
-- persistent validated memory,
-- temporal supersession,
-- adversarial memory poisoning, and
-- human-in-the-loop approval.
+|| Metric | Value |
+|---|---|---|
+|| Attack samples | 100 |
+|| Normal samples | 20 |
+|| True positives | 54 / 100 |
+|| False positives | 0 / 20 |
+|| Precision | 1.00 |
+|| Recall | 0.54 |
+|| F1 | 0.70 |
+|| Accuracy | 61.7% |
 
-So we built a scenario suite that isolates the specific memory-firewall behaviors we ship. However, the set is small and self-curated; it is not externally comparable.
+Zero false positives on normal tools is the key result; the false negatives are mostly low-aggression, stealth attack instructions.
+
+3. **MemoryAgentBench conflict-resolution pilot** (`backend/evaluations/benchmarks/memoryagentbench.py`):
+
+|| Setting | Accuracy |
+|---|---|---|
+|| All facts provided | 4 / 5 (80%) |
+|| Top-50 retrieval only | 1 / 5 (20%) |
+
+This confirms reasoning is strong once the relevant facts are surfaced, and it identifies multi-hop retrieval as the next bottleneck.
+
+**Why still keep a custom suite?** No public benchmark currently covers the intersection of real-world incident-response workflow, persistent validated memory, temporal supersession, adversarial memory poisoning, and human-in-the-loop approval. The public benchmarks give externally comparable numbers; the custom suite isolates the specific memory-firewall behaviors TriageTrace ships.
 
 ## 2. Public benchmarks that fit
 
@@ -88,14 +106,16 @@ So we built a scenario suite that isolates the specific memory-firewall behavior
 
 ## 4. Concrete next steps
 
-1. **Reframe the current README section** to state clearly that the 13-scenario suite is a *domain-specific adversarial smoke test* inspired by MemoryAgentBench categories and ASB memory-poisoning cases.
-2. **Add a `backend/evaluations/benchmarks/memoryagentbench.py` runner** that downloads the public `EventQA`/`FactConsolidation` subset and runs it through `retrieve_and_pack`. Report AR, CR, and selective-forgetting scores.
-3. **Add an ASB poison subset runner** that tests MemoryGate against a few memory-poisoning tasks and reports poison ASR.
-4. **Document the ITBench/SREGym gap** in `docs/benchmark_strategy.md` as future work requiring live Kubernetes on Alibaba Cloud ACK.
+1. ✅ **Reframe the README benchmark section** so the 13-scenario suite is presented as a *domain-specific adversarial smoke test* inspired by MemoryAgentBench categories and ASB memory-poisoning cases.
+2. ✅ **Add a `backend/evaluations/benchmarks/memoryagentbench.py` runner** that downloads the public `Conflict_Resolution` subset and runs it through memory retrieval. Report CR and selective-forgetting scores.
+3. ✅ **Add an ASB poison subset runner** that tests MemoryGate against ASB tool descriptions and reports quarantine metrics.
+4. **Scale the runners**: run MemoryAgentBench on more samples/splits (AR, TTL) and ASB on the full 400-attack set; add per-tool F1 and attack-category breakdowns.
+5. **Close the retrieval gap**: add multi-hop / query-expansion retrieval so the top-k recalled facts contain the full chain needed for CR questions.
+6. **Document the ITBench/SREGym gap** in `docs/benchmark_strategy.md` as future work requiring live Kubernetes on Alibaba Cloud ACK.
 
 ## 5. Suggested wording for the README / Devpost page
 
-> TriageTrace is evaluated on a 13-scenario adversarial smoke test designed around the competencies of MemoryAgentBench (accurate retrieval, conflict resolution, selective forgetting) and the memory-poisoning attack taxonomy of AgentSecurityBench (ASB). The suite is intentionally compact so it can be run live against Qwen Cloud in minutes. We are working toward integrating the public MemoryAgentBench and ASB datasets for externally comparable numbers, and ITBench/SREGym for live Kubernetes incident validation.
+> TriageTrace is evaluated on a 13-scenario adversarial smoke test, a public AgentSecurityBench (ASB) memory-poisoning gate, and a pilot MemoryAgentBench conflict-resolution subset. The smoke test is intentionally compact and can be run live against Qwen Cloud in minutes; the public benchmarks provide externally comparable ASR/RR and accuracy numbers. We are working toward scaling the MemoryAgentBench and ASB runners to full splits, and to ITBench/SREGym for live Kubernetes incident validation.
 
 ## 6. Sources
 

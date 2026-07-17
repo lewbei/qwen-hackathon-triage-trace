@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     log_level: str = "info"
     memory_token_budget: int = 800
+    use_llm_poison_check: bool = False
     default_tenant: str = "default"
 
     live_qwen_test: int = 0
