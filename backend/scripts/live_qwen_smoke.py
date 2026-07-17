@@ -6,16 +6,11 @@ Usage:
 """
 import asyncio
 import json
-import os
 
 from backend.app.qwen import QwenGateway
 
 
 async def main() -> None:
-    if not os.environ.get("QWEN_API_KEY"):
-        print("Set QWEN_API_KEY to run this smoke test.")
-        raise SystemExit(1)
-
     gateway = QwenGateway()
     response = await gateway.chat(
         messages=[
