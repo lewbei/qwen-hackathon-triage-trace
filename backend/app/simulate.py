@@ -61,7 +61,17 @@ def simulate_action(service: str, action: str, metrics: dict[str, Any] | None = 
 
     # notification-service / queue backlog patterns.
     elif service == "notification-service" or queue_depth > 0:
-        if _contains(action_lower, "scale", "requeue", "worker", "horizontal"):
+        if "database" in action_lower and "restart" in action_lower:
+            post["queue_depth"] = queue_depth * 1.5
+            post["errors"] = _clamp(errors + 0.2)
+            reasoning_parts.append("restarting the database during a queue backlog is harmful")
+            improved = False
+        elif _contains(action_lower, "delete", "refund", "drop", "wipe"):
+            post["queue_depth"] = max(0.0, queue_depth)
+            post["errors"] = _clamp(errors + 0.3)
+            reasoning_parts.append("action involves destructive data loss and worsens reliability")
+            improved = False
+        elif _contains(action_lower, "scale", "requeue", "worker", "horizontal"):
             post["queue_depth"] = max(0.0, queue_depth * 0.2)
             post["cpu"] = _clamp(cpu + 0.15)
             post["memory"] = _clamp(memory + 0.05)
@@ -79,18 +89,23 @@ def simulate_action(service: str, action: str, metrics: dict[str, Any] | None = 
 
     # cart-service / payment-service checkout patterns.
     elif service in ("cart-service", "payment-service"):
-        if ("scale redis" in action_lower or "scale cache" in action_lower
+        # Harmful sub-actions must be detected even inside otherwise positive phrases.
+        if "database" in action_lower and "restart" in action_lower:
+            post["errors"] = _clamp(errors + 0.2)
+            post["cpu"] = _clamp(cpu + 0.2)
+            reasoning_parts.append("restarting the database during checkout failures causes more downtime")
+            improved = False
+        elif _contains(action_lower, "delete", "refund", "drop", "wipe"):
+            post["errors"] = _clamp(errors + 0.3)
+            reasoning_parts.append("action involves destructive data loss and worsens reliability")
+            improved = False
+        elif ("scale redis" in action_lower or "scale cache" in action_lower
                 or "restart cart workers" in action_lower or "restart payment workers" in action_lower
                 or "scale workers" in action_lower):
             post["errors"] = _clamp(errors * 0.2)
             post["cpu"] = _clamp(cpu + 0.1)
             reasoning_parts.append("scaling Redis/workers addresses checkout latency and drops error rate")
             improved = True
-        elif "restart" in action_lower and "database" in action_lower:
-            post["errors"] = _clamp(errors + 0.2)
-            post["cpu"] = _clamp(cpu + 0.2)
-            reasoning_parts.append("restarting the database during checkout failures causes more downtime")
-            improved = False
         elif "restart" in action_lower and ("worker" in action_lower or "workers" in action_lower):
             post["errors"] = _clamp(errors * 0.3)
             post["cpu"] = _clamp(cpu + 0.1)

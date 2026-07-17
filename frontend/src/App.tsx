@@ -216,7 +216,7 @@ function App() {
                 <div className="mt-4 border rounded p-3 bg-gray-50">
                   <h3 className="font-semibold text-sm mb-1">Simulated outcome</h3>
                   <p className={`text-sm font-semibold ${outcome.improved ? 'text-green-700' : 'text-red-700'}`}>
-                    {outcome.improved ? 'Validated — metrics improve' : 'Rejected — metrics worsen'}
+                    {outcome.improved ? 'Simulated safe — predicted metrics improve' : 'Rejected by simulation — predicted metrics worsen'}
                   </p>
                   <p className="text-xs text-gray-600 mb-2">{outcome.reasoning}</p>
                   <div className="grid grid-cols-2 gap-2 text-xs">
@@ -257,7 +257,7 @@ function App() {
               <tbody>
                 {memories.map((m) => (
                   <tr key={m.id} className="border-b">
-                    <td className="px-1 py-1"><span className={`px-2 py-0.5 rounded text-xs ${m.status === 'active' ? 'bg-green-100 text-green-800' : m.status === 'quarantined' ? 'bg-red-100 text-red-800' : m.status === 'superseded' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100'}`}>{m.status}</span></td>
+                    <td className="px-1 py-1"><span className={`px-2 py-0.5 rounded text-xs ${m.status === 'active' || m.status === 'simulated_safe' ? 'bg-green-100 text-green-800' : m.status === 'quarantined' ? 'bg-red-100 text-red-800' : m.status === 'superseded' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100'}`}>{m.status}</span></td>
                     <td className="px-1 py-1">{m.type}</td>
                     <td className="px-1 py-1">{m.scope}</td>
                     <td className="px-1 py-1">{m.subject}</td>

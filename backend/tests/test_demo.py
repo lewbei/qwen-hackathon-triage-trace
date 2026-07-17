@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from backend.app.demo import run_accumulation_demo, run_winning_scenario
+from backend.app.memory import ACTIVE_STATUSES
 from backend.app.schemas import ActionProposal
 
 
@@ -53,18 +54,23 @@ async def test_winning_scenario_verdict(db_session):
             rows = list(result.scalars().all())
             by_content = {m.content.split()[0]: m for m in rows}
             # "When" is the start of all three, but the next word differs. Distinguish by action verb.
-            new_mem = next((m for m in rows if "requeue" in m.content), None)
+            new_mem = next((m for m in rows if "requeue failed messages" in m.content.lower()), None)
             if mode.value == "stateless":
                 recalled = []
             else:
                 recalled = [str(new_mem.id)] if new_mem else []
+            memory_action = (
+                "Scale notification workers and requeue failed messages"
+                if alert.service == "notification-service"
+                else "Scale Redis and restart cart workers"
+            )
             return {
                 "id": f"test-run-{mode.value}",
                 "tenant": alert.tenant,
                 "mode": mode,
                 "alert": alert,
                 "events": [],
-                "proposal": _make_proposal(recalled, action=f"{mode.value} action"),
+                "proposal": _make_proposal(recalled, action=memory_action if mode.value == "memory" else f"{mode.value} action"),
             }
 
         mock_run.side_effect = _run_incident_side_effect
@@ -75,8 +81,10 @@ async def test_winning_scenario_verdict(db_session):
     memories = result["memories"]
 
     assert memories["old"]["status"] == "superseded"
-    assert memories["new"]["status"] == "active"
+    assert memories["new"]["status"] in ACTIVE_STATUSES
     assert memories["poison"]["status"] == "quarantined"
+    assert summary["memory_firewall_passed"] is True
+    assert summary["agent_behaviour_passed"] is True
     assert summary["demo_passed"] is True
     assert memories["new"]["id"] in summary["recalled_ids"]
     assert memories["old"]["id"] not in summary["recalled_ids"]
@@ -99,18 +107,23 @@ async def test_accumulation_demo_verdict(db_session):
                 )
             )
             rows = list(result.scalars().all())
-            new_mem = next((m for m in rows if "scale the Redis cache" in m.content), None)
+            new_mem = next((m for m in rows if "restart the cart workers" in m.content.lower()), None)
             if mode.value == "stateless":
                 recalled = []
             else:
                 recalled = [str(new_mem.id)] if new_mem else []
+            memory_action = (
+                "Scale notification workers and requeue failed messages"
+                if alert.service == "notification-service"
+                else "Scale Redis and restart cart workers"
+            )
             return {
                 "id": f"test-run-{mode.value}",
                 "tenant": alert.tenant,
                 "mode": mode,
                 "alert": alert,
                 "events": [],
-                "proposal": _make_proposal(recalled, action=f"{mode.value} action"),
+                "proposal": _make_proposal(recalled, action=memory_action if mode.value == "memory" else f"{mode.value} action"),
             }
 
         mock_run.side_effect = _run_incident_side_effect
@@ -121,8 +134,10 @@ async def test_accumulation_demo_verdict(db_session):
     memories = result["memories"]
 
     assert memories["old"]["status"] == "superseded"
-    assert memories["new"]["status"] == "active"
+    assert memories["new"]["status"] in ACTIVE_STATUSES
     assert memories["poison"]["status"] == "quarantined"
+    assert summary["memory_firewall_passed"] is True
+    assert summary["agent_behaviour_passed"] is True
     assert summary["demo_passed"] is True
     assert memories["new"]["id"] in summary["recalled_ids"]
     assert memories["old"]["id"] not in summary["recalled_ids"]

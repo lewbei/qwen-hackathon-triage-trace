@@ -13,6 +13,8 @@ interface ScenarioMemory {
 }
 
 interface ScenarioSummary {
+  memory_firewall_passed: boolean
+  agent_behaviour_passed: boolean
   old_status: string
   new_status: string
   poison_status: string
@@ -64,7 +66,7 @@ interface Scenario {
 }
 
 function statusClass(status: string) {
-  if (status === 'active') return 'bg-green-100 text-green-800'
+  if (status === 'active' || status === 'simulated_safe') return 'bg-green-100 text-green-800'
   if (status === 'superseded') return 'bg-yellow-100 text-yellow-800'
   if (status === 'quarantined') return 'bg-red-100 text-red-800'
   return 'bg-gray-100'
@@ -115,15 +117,9 @@ export default function AccumulationDemo() {
 
       {scenario && (
         <div className="space-y-6">
-          {scenario.demo_passed ? (
-            <div className="bg-green-100 text-green-800 p-3 rounded font-semibold">
-              PASS — the latest validated procedure was recalled; stale and poisoned memories were excluded.
-            </div>
-          ) : (
-            <div className="bg-red-100 text-red-800 p-3 rounded font-semibold">
-              FAIL — inspect the retrieval trace below.
-            </div>
-          )}
+          <div className={`p-3 rounded font-semibold ${scenario.summary.demo_passed ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+            {scenario.summary.demo_passed ? 'PASS' : 'FAIL'} — Memory firewall: {scenario.summary.memory_firewall_passed ? 'PASS' : 'FAIL'}; Agent behaviour: {scenario.summary.agent_behaviour_passed ? 'PASS' : 'FAIL'}.
+          </div>
 
           <div className="relative border-l-2 border-indigo-200 ml-3 space-y-6 pl-6">
             <div className="relative">

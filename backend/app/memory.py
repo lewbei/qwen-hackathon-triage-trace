@@ -23,6 +23,9 @@ DEFAULT_TTLS = {
     "policy": None,
 }
 
+# Statuses that represent a memory the agent is allowed to recall.
+ACTIVE_STATUSES = ("active", "simulated_safe")
+
 AUTHORITY = {
     "operator": 100,
     "runbook": 90,
@@ -161,7 +164,7 @@ async def _memory_gate(session: AsyncSession, record: MemoryRecord) -> bool:
             MemoryRecord.scope == record.scope,
             MemoryRecord.subject == record.subject,
             MemoryRecord.type == "policy",
-            MemoryRecord.status == "active",
+            MemoryRecord.status.in_(ACTIVE_STATUSES),
         )
     )
     for policy in result.scalars():
@@ -236,10 +239,11 @@ async def create_memory(
             MemoryRecord.scope == scope,
             MemoryRecord.subject == subject,
             MemoryRecord.predicate == predicate,
-            MemoryRecord.status.in_(["active", "candidate"]),
+            MemoryRecord.status.in_(list(ACTIVE_STATUSES) + ["candidate"]),
         )
     )
-    for old in existing.scalars():
+    existing_rows = list(existing.scalars().all())
+    for old in existing_rows:
         if old.content == record.content:
             # duplicate
             record.status = "quarantined"
@@ -276,7 +280,7 @@ async def search_memories(
     stmt = select(MemoryRecord).where(
         MemoryRecord.tenant == tenant,
         MemoryRecord.scope == scope,
-        MemoryRecord.status == "active",
+        MemoryRecord.status.in_(ACTIVE_STATUSES),
         (MemoryRecord.expires_at.is_(None)) | (MemoryRecord.expires_at > now),
         MemoryRecord.valid_from <= now,
     )
@@ -355,7 +359,7 @@ def _pack_memories(
     budget: int = 800,
 ) -> tuple[list[MemoryRecord], list[MemoryRecord], int]:
     """Greedy pack: policies/preferences first, then others, within token budget."""
-    eligible = [m for m in memories if m.status == "active"]
+    eligible = [m for m in memories if m.status in ACTIVE_STATUSES]
     eligible.sort(key=lambda m: (0 if m.type in ("policy", "preference") else 1, -m.utility))
     packed: list[MemoryRecord] = []
     omitted: list[MemoryRecord] = []

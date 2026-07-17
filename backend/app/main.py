@@ -7,16 +7,16 @@ from enum import Enum
 from typing import Any
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, HTTPException, Header
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Header, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.agent import run_incident
-from backend.app.demo import run_accumulation_demo, run_winning_scenario
 from backend.app.config import settings
+from backend.app.decisions import apply_operator_decision
+from backend.app.demo import run_accumulation_demo, run_winning_scenario
 from backend.app.memory import create_memory, get_memory_lineage
-from backend.app.simulate import simulate_action
 from backend.app.models import AsyncSessionLocal, MemoryRecord, RunRecord, get_db
 from backend.app.schemas import (
     ActionProposal,
@@ -30,6 +30,52 @@ from backend.app.schemas import (
 from backend.app.skills import invoke_skill, list_skills
 
 app = FastAPI(title="TriageTrace", version="0.1.0")
+
+
+class _DemoRateLimiter:
+    """Simple per-IP sliding-window rate limiter for the public demo endpoints.
+
+    This is intentionally lightweight: the demo runs in a single container and
+    the limit only has to stop accidental abuse during judging. A proper deployment
+    should put a reverse proxy or WAF in front.
+    """
+
+    def __init__(self, max_requests: int = 5, window_seconds: int = 60):
+        self._max = max_requests
+        self._window = window_seconds
+        self._hits: dict[str, list[float]] = {}
+
+    def allow(self, ip: str) -> bool:
+        import time
+
+        now = time.time()
+        timestamps = [t for t in self._hits.get(ip, []) if now - t < self._window]
+        if len(timestamps) >= self._max:
+            self._hits[ip] = timestamps
+            return False
+        timestamps.append(now)
+        self._hits[ip] = timestamps
+        return True
+
+
+_demo_limiter = _DemoRateLimiter()
+
+
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host or "unknown"
+
+
+async def _cleanup_demo_tenant(tenant: str) -> None:
+    """Remove the transient demo tenant after the response has been sent."""
+    from backend.app.models import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as session:
+        await session.execute(delete(MemoryRecord).where(MemoryRecord.tenant == tenant))
+        await session.execute(delete(RunRecord).where(RunRecord.tenant == tenant))
+        await session.commit()
 
 
 @app.get("/health")
@@ -170,108 +216,7 @@ async def decide(run_id: str, decision: DecisionIn, db: AsyncSession = Depends(g
     record = await db.get(RunRecord, UUID(run_id))
     if not record or not record.proposal:
         raise HTTPException(status_code=404, detail="Proposal not found")
-    proposal = ActionProposal(**record.proposal)
-    alert = Alert(**record.alert)
-
-    # Try to use the metrics the agent actually observed during the run.
-    observed_metrics: dict[str, Any] | None = None
-    for ev in record.events or []:
-        payload = ev.get("payload") or {}
-        if ev.get("event_type") == "tools.called" and isinstance(payload, dict):
-            for result in payload.get("results", []):
-                if result.get("tool") == "inspect_metrics" and isinstance(result.get("result"), dict):
-                    observed_metrics = result["result"]
-                    break
-            if observed_metrics:
-                break
-
-    outcome = simulate_action(proposal.service, proposal.action, observed_metrics)
-    record.decision = {
-        "approved": decision.approved,
-        "feedback": decision.feedback,
-        "outcome": outcome,
-    }
-
-    if decision.approved and outcome["improved"]:
-        proposal.status = "validated"
-        record.status = "validated"
-        memory = await create_memory(
-            db,
-            tenant=record.tenant,
-            provenance="validated_execution",
-            type="procedure",
-            scope=proposal.service,
-            subject=alert.symptom,
-            predicate="remediation",
-            content=f"Validated procedure: {proposal.action}. Evidence: {proposal.evidence}. Simulated outcome: {outcome['reasoning']} (delta {outcome['delta']:+}). Operator feedback: {decision.feedback}",
-            source_authority=90,
-            auto_embed=True,
-        )
-        memory.status = "active"
-        record.proposal = proposal.model_dump()
-        await db.commit()
-        return {
-            "run_id": run_id,
-            "approved": True,
-            "validated": True,
-            "feedback": decision.feedback,
-            "status": "validated",
-            "memory_id": str(memory.id),
-            "outcome": outcome,
-        }
-
-    # If the operator approved but the simulated outcome does not improve, reject the
-    # action and record a negative preference so the agent learns to avoid it.
-    if decision.approved:
-        proposal.status = "rejected_by_simulation"
-        record.status = "rejected_by_simulation"
-        await create_memory(
-            db,
-            tenant=record.tenant,
-            provenance="failed_execution",
-            type="preference",
-            scope=proposal.service,
-            subject=alert.symptom,
-            predicate="avoid",
-            content=f"Avoid action: {proposal.action}. Simulated outcome: {outcome['reasoning']} (delta {outcome['delta']:+}). Operator feedback: {decision.feedback}",
-            source_authority=95,
-            auto_embed=True,
-        )
-        record.proposal = proposal.model_dump()
-        await db.commit()
-        return {
-            "run_id": run_id,
-            "approved": False,
-            "validated": False,
-            "feedback": decision.feedback,
-            "status": "rejected_by_simulation",
-            "outcome": outcome,
-        }
-
-    proposal.status = "rejected"
-    record.status = "rejected"
-    await create_memory(
-        db,
-        tenant=record.tenant,
-        provenance="operator",
-        type="preference",
-        scope=proposal.service,
-        subject=alert.symptom,
-        predicate="avoid",
-        content=f"Rejected action: {proposal.action}. Operator feedback: {decision.feedback}",
-        source_authority=100,
-        auto_embed=True,
-    )
-    record.proposal = proposal.model_dump()
-    await db.commit()
-    return {
-        "run_id": run_id,
-        "approved": False,
-        "validated": False,
-        "feedback": decision.feedback,
-        "status": "rejected",
-        "outcome": outcome,
-    }
+    return await apply_operator_decision(db, record, decision.approved, decision.feedback)
 
 
 @app.get("/api/skills")
@@ -304,7 +249,7 @@ async def list_memories(tenant: str = settings.default_tenant, db: AsyncSession 
 
 
 @app.post("/api/memories")
-async def add_memory(
+async def add_untrusted_memory(
     tenant: str,
     provenance: str,
     type: str,
@@ -314,6 +259,22 @@ async def add_memory(
     content: str,
     db: AsyncSession = Depends(get_db),
 ) -> MemoryRecordSchema:
+    """Accept an externally submitted memory. Trusted provenance values are never
+    accepted from the client; they are overridden to external/observation so the
+    memory firewall always screens the content.
+    """
+    # Trusted provenance values may only be set by internal server workflows
+    # (operator approval, validated sandbox execution, etc.). A public caller cannot
+    # bypass the poison gate by claiming trusted origin.
+    trusted_provenances = {"operator", "approved_execution", "validated_execution", "runbook"}
+    if provenance in trusted_provenances or type in ("procedure", "policy"):
+        # Force the submission into the untrusted external observation path.
+        provenance = "external"
+        type = "observation"
+    if provenance not in ("external", "model", "log", "tool"):
+        provenance = "external"
+    if type not in ("observation", "episode", "fact"):
+        type = "observation"
     record = await create_memory(
         db,
         tenant=tenant,
@@ -341,7 +302,14 @@ async def memory_lineage(memory_id: str, tenant: str = settings.default_tenant, 
 
 
 @app.delete("/api/memories/{memory_id}")
-async def delete_memory(memory_id: str, db: AsyncSession = Depends(get_db)) -> dict[str, str]:
+async def delete_memory(
+    memory_id: str,
+    db: AsyncSession = Depends(get_db),
+    x_demo_secret: str = Header(default=""),
+) -> dict[str, str]:
+    """Mark a memory as deleted. If a demo secret is configured, require it."""
+    if settings.demo_secret and x_demo_secret != settings.demo_secret:
+        raise HTTPException(status_code=403, detail="invalid demo secret")
     record = await db.get(MemoryRecord, UUID(memory_id))
     if not record:
         raise HTTPException(status_code=404, detail="Memory not found")
@@ -406,21 +374,38 @@ async def demo_reset(
 
 
 @app.post("/api/demo/winning-scenario")
-async def winning_scenario(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+async def winning_scenario(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
     """Run a controlled scenario demonstrating temporal supersession, poison quarantine,
     and memory-based incident response. Not for production use.
 
     Each call runs in an isolated tenant to avoid cross-user interference.
+    Rate-limited per IP and the transient tenant is cleaned up after the response.
     """
-    return await run_winning_scenario(db)
+    if not _demo_limiter.allow(_client_ip(request)):
+        raise HTTPException(status_code=429, detail="Too many demo requests. Please wait a minute.")
+    result = await run_winning_scenario(db)
+    background_tasks.add_task(_cleanup_demo_tenant, result["tenant"])
+    return result
 
 
 @app.post("/api/demo/accumulation")
-async def accumulation(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+async def accumulation(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
     """Run a controlled multi-session accumulation scenario.
 
     Simulates prior approved sessions (old procedure, newer procedure, poison attempt)
     and then runs a fresh incident to show that memory recalls only the current safe
     procedure. Not for production use.
     """
-    return await run_accumulation_demo(db)
+    if not _demo_limiter.allow(_client_ip(request)):
+        raise HTTPException(status_code=429, detail="Too many demo requests. Please wait a minute.")
+    result = await run_accumulation_demo(db)
+    background_tasks.add_task(_cleanup_demo_tenant, result["tenant"])
+    return result
