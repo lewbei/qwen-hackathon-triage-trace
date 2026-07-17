@@ -1,34 +1,83 @@
-# TriageTrace — Agent Notes
+# AGENTS.md
 
-## Verification commands
+## Project
 
-- Unit / integration tests: `python -m pytest backend/tests -q`
-- Docker smoke test: `docker compose up -d --build` then `curl http://localhost:5173/api/health`
-- Docker demo smoke test: `curl -X POST http://localhost:5173/api/demo/winning-scenario`
+TriageTrace is a temporal memory firewall for Qwen-powered incident-response agents.
 
-## Working with the running API
+The product must preserve these guarantees:
 
-The FastAPI container keeps an open SQLAlchemy / asyncpg connection while it is up. Running the test suite against the same Postgres instance can hang on `DELETE FROM memories` because of the open transaction. **Stop the `api` container before running tests:**
+* useful experience accumulates across sessions;
+* newer authoritative memories supersede stale memories;
+* poisoned, superseded, expired, future-dated, and cross-tenant memories are not recalled;
+* public callers cannot assign trusted provenance, authority, status, or tenant identity;
+* simulation-screened outcomes are not described as execution-validated;
+* judge-facing PASS/FAIL results are derived from actual system state.
+
+## Repository
+
+* `backend/` — FastAPI, memory lifecycle, agent logic, and tests
+* `frontend/` — React judge-facing interface
+* `deploy/` — Alibaba Cloud and deployment configuration
+* `docs/` — architecture, benchmarks, threat model, and operational documentation
+
+Follow any more specific `AGENTS.md` found inside the directory being modified.
+
+## Commands
+
+Backend tests:
 
 ```bash
-docker compose stop api
-python -m pytest backend/tests -q
+pytest backend/tests
 ```
 
-## Public network layout
+Frontend build:
 
-- The `api` service is **not** published to the host (`ports:` removed). It is only reachable through the `ui` (nginx) proxy at `http://localhost:5173/api/`.
-- `nginx` forwards `X-Forwarded-For`, `X-Real-IP`, and `X-Forwarded-Proto` so the in-memory rate limiter sees the real client IP.
-- Direct port-8000 access to the API is blocked at the Docker Compose level.
+```bash
+cd frontend
+npm ci
+npm run build
+```
 
-## Public vs. privileged access
+Docker build:
 
-- Public callers are forced to the `DEFAULT_TENANT` (`default`) unless they provide the `X-Demo-Secret` header matching `DEMO_SECRET`.
-- `POST /api/memories` always downgrades the request to an untrusted `external` `observation`; it cannot create a `procedure` or `policy` from the public API.
-- `DELETE /api/memories/{id}` and `POST /api/demo/reset` always require `DEMO_SECRET`.
-- The `demo/reset` endpoint no longer has a UI button; admins can call it with the secret via `curl`.
+```bash
+docker compose build
+```
 
-## Memory lifecycle rules
+## Engineering approach
 
-- Supersession is authority- **and** timestamp-aware: a record only supersedes an active memory when it has higher authority, or equal authority and a strictly newer `source_timestamp`.
-- Out-of-order or equal-timestamp arrivals with equal authority are quarantined as `stale or out-of-order`.
+Fix the shared invariant, not only the visible symptom, example, or demo output.
+
+For non-trivial correctness, security, or architecture work:
+
+1. Identify the violated invariant and root cause.
+2. Consider at least two materially different solutions.
+3. Compare their correctness, generality, complexity, and failure modes.
+4. Prefer the smallest solution that removes the failure class.
+5. Add a regression test that fails before the fix.
+
+Do not:
+
+* hardcode successful verdicts or recalled memory IDs;
+* bypass production workflows in demos;
+* duplicate shared lifecycle or decision logic;
+* trust client-controlled authority fields;
+* silently convert correctness failures into successful fallbacks;
+* claim tests, CI, benchmarks, deployment, or smoke tests succeeded without evidence;
+* strengthen documentation claims beyond what the implementation proves.
+
+`if/else` is allowed. Prefer clear local conditionals over unnecessary abstractions. Centralize repeated domain decisions and avoid brittle substring logic for semantic correctness.
+
+## Definition of done
+
+A behavioral task is complete only when:
+
+* the root invariant is enforced;
+* all relevant entry points use the fix;
+* regression coverage exists;
+* affected tests pass;
+* relevant builds pass;
+* documentation matches the implementation;
+* remaining limitations are reported honestly.
+
+A happy-path demo alone is not sufficient.
