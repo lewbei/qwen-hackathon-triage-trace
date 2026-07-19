@@ -16,14 +16,14 @@ variable "vpc_cidr" {
   default     = "10.0.0.0/16"
 }
 
-variable "key_name" {
-  description = "ECS SSH key pair name (optional)"
+variable "ssh_cidr" {
+  description = "CIDR block allowed to SSH to the ECS instance (required; set to your IP/32)"
   type        = string
   default     = ""
 }
 
-variable "ssh_cidr" {
-  description = "CIDR block allowed to SSH to the ECS instance (required; set to your IP/32)"
+variable "key_name" {
+  description = "ECS SSH key pair name (optional)"
   type        = string
   default     = ""
 }
@@ -35,33 +35,15 @@ variable "instance_type" {
 }
 
 variable "image_id" {
-  description = "Ubuntu 22.04 image ID"
+  description = "ECS image ID override; if empty, the latest official Ubuntu 22.04 image is used"
   type        = string
-  default     = "ubuntu_22_04_x64_20G_alibase_20230627.vhd"
-}
-
-variable "db_instance_class" {
-  description = "RDS PostgreSQL instance class"
-  type        = string
-  default     = "pg.n2.medium.1"
-}
-
-variable "db_storage" {
-  description = "RDS storage in GB"
-  type        = number
-  default     = 50
+  default     = ""
 }
 
 variable "db_user" {
-  description = "RDS master username"
+  description = "Internal PostgreSQL username for the ECS-hosted pgvector container"
   type        = string
-  default     = "triagetrace"
-}
-
-variable "db_password" {
-  description = "RDS master password"
-  type        = string
-  sensitive   = true
+  default     = "postgres"
 }
 
 variable "qwen_api_key" {

@@ -4,6 +4,10 @@ terraform {
       source  = "aliyun/alicloud"
       version = "~> 1.220"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
   }
 }
 
@@ -24,10 +28,10 @@ resource "alicloud_vswitch" "triagetrace" {
   zone_id      = var.zone_id
 }
 
-# Security group allowing public HTTP/HTTPS and API/dashboard ports.
+# Security group exposing public HTTP only and SSH from a chosen CIDR.
 resource "alicloud_security_group" "triagetrace" {
-  name   = "triagetrace-sg"
-  vpc_id = alicloud_vpc.triagetrace.id
+  security_group_name = "triagetrace-sg"
+  vpc_id              = alicloud_vpc.triagetrace.id
 }
 
 resource "alicloud_security_group_rule" "ssh" {
@@ -53,62 +57,37 @@ resource "alicloud_security_group_rule" "http" {
   cidr_ip           = "0.0.0.0/0"
 }
 
-resource "alicloud_security_group_rule" "https" {
-  type              = "ingress"
-  ip_protocol       = "tcp"
-  nic_type          = "internet"
-  policy            = "accept"
-  port_range        = "443/443"
-  priority          = 1
-  security_group_id = alicloud_security_group.triagetrace.id
-  cidr_ip           = "0.0.0.0/0"
+# Latest official Ubuntu 22.04 image, with a variable override if needed.
+data "alicloud_images" "ubuntu" {
+  owners      = "system"
+  name_regex  = "^ubuntu_22_04"
+  most_recent = true
 }
 
-# RDS PostgreSQL with pgvector
-resource "alicloud_db_instance" "triagetrace" {
-  engine                   = "PostgreSQL"
-  engine_version           = "15.0"
-  instance_type            = var.db_instance_class
-  instance_storage         = var.db_storage
-  instance_charge_type     = "Postpaid"
-  category                 = "Basic"
-  db_instance_storage_type = "cloud_essd"
-  vswitch_id               = alicloud_vswitch.triagetrace.id
-  zone_id                  = var.zone_id
-  security_ips             = [var.vpc_cidr]
+# Internal PostgreSQL password for the ECS-hosted pgvector container.
+resource "random_password" "db" {
+  length  = 24
+  special = false
 }
 
-resource "alicloud_db_database" "triagetrace" {
-  instance_id = alicloud_db_instance.triagetrace.id
-  name        = "triagetrace"
-}
-
-# Super account required to CREATE EXTENSION vector
-resource "alicloud_rds_account" "triagetrace" {
-  db_instance_id   = alicloud_db_instance.triagetrace.id
-  account_name     = var.db_user
-  account_password = var.db_password
-  account_type     = "Super"
-}
-
-# ECS instance running backend + frontend
+# ECS instance running backend + frontend + pgvector
 resource "alicloud_instance" "triagetrace" {
-  image_id             = var.image_id
-  instance_type        = var.instance_type
-  security_groups      = [alicloud_security_group.triagetrace.id]
-  vswitch_id           = alicloud_vswitch.triagetrace.id
-  instance_name        = "triagetrace-api"
-  system_disk_category = "cloud_essd"
-  system_disk_size     = 40
-  internet_charge_type = "PayByTraffic"
+  image_id                   = var.image_id != "" ? var.image_id : data.alicloud_images.ubuntu.images[0].id
+  instance_type              = var.instance_type
+  security_groups            = [alicloud_security_group.triagetrace.id]
+  vswitch_id                 = alicloud_vswitch.triagetrace.id
+  instance_name              = "triagetrace-api"
+  system_disk_category       = "cloud_essd"
+  system_disk_size           = 40
+  internet_charge_type       = "PayByTraffic"
   internet_max_bandwidth_out = 100
-  key_name             = var.key_name
+  key_name                   = var.key_name
 
   user_data = base64encode(templatefile("${path.module}/cloud-init.sh", {
-    db_host     = alicloud_db_instance.triagetrace.connection_string
-    db_name     = alicloud_db_database.triagetrace.name
-    db_user     = var.db_user
-    db_password = var.db_password
+    db_host      = "db"
+    db_name      = "triagetrace"
+    db_user      = var.db_user
+    db_password  = random_password.db.result
     qwen_api_key = var.qwen_api_key
   }))
 }
@@ -128,10 +107,4 @@ resource "alicloud_eip_association" "triagetrace" {
 output "public_ip" {
   description = "Public EIP of the TriageTrace ECS instance"
   value       = alicloud_eip_address.triagetrace.ip_address
-}
-
-output "rds_connection_string" {
-  description = "RDS internal endpoint"
-  value       = alicloud_db_instance.triagetrace.connection_string
-  sensitive   = true
 }

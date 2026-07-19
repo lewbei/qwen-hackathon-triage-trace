@@ -5,6 +5,6 @@ flowchart LR
     API --> T[Metrics, Deployment and Runbook Tools]
     API --> M[Temporal Memory Firewall]
     M --> E[Qwen Embedding and Rerank]
-    M --> DB[ApsaraDB RDS PostgreSQL + pgvector]
+    M --> DB[PostgreSQL + pgvector<br/>on Alibaba ECS]
     API --> H[Human Approval Gate]
     H --> X[Allowlisted Simulation Executor]

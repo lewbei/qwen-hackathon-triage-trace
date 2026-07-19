@@ -33,6 +33,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -e .
+      - name: Create pgvector extension
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+          PGPASSWORD=postgres psql -h localhost -U postgres -d triagetrace -c "CREATE EXTENSION IF NOT EXISTS vector;"
       - name: Run backend tests
         env:
           DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/triagetrace

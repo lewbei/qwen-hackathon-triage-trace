@@ -8,7 +8,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-## Automated ECS + ApsaraDB RDS deployment
+## Automated ECS deployment
 
 The repository includes Terraform Infrastructure-as-Code under `deploy/alibaba/` and a convenience wrapper at `scripts/deploy_alibaba_ecs.sh`.
 
@@ -18,8 +18,8 @@ export ALICLOUD_SECRET_KEY=...
 
 # Create deploy/alibaba/terraform.tfvars with your secrets
 cat > deploy/alibaba/terraform.tfvars <<EOF
-db_password  = "your-rds-password"
 qwen_api_key = "your-dashscope-key"
+ssh_cidr     = "YOUR.IP.ADDRESS/32"
 EOF
 
 ./scripts/deploy_alibaba_ecs.sh
@@ -30,29 +30,30 @@ After `terraform apply` finishes, the public IP of the ECS instance is printed. 
 ### What the Terraform stack creates
 
 - VPC and VSwitch in the chosen region
-- Security group exposing 22, 80, 443, 8000, and 5173
-- ApsaraDB RDS for PostgreSQL 15 instance with pgvector support
+- Security group exposing only port 80 publicly and SSH from your `/32`
 - ECS instance running Ubuntu 22.04
 - Elastic IP associated with the ECS instance
-- Cloud-init script that installs Docker, clones the repo, writes the environment file, and starts TriageTrace via `docker compose up -d`
+- Cloud-init script that installs Docker, clones the public repo, writes the environment file, and starts TriageTrace via `docker-compose.prod.yml`
 
-## Manual ECS + ApsaraDB RDS
+On the ECS instance:
 
-1. Create an ECS instance in the same region as your RDS instance.
-2. Install Docker and Docker Compose on ECS.
-3. Create an ApsaraDB RDS for PostgreSQL instance with pgvector enabled:
-   ```sql
-   CREATE EXTENSION IF NOT EXISTS vector;
-   ```
-4. Update `.env` with the RDS endpoint and Qwen Cloud API key.
-5. Copy the project to ECS and run:
-   ```bash
-   docker compose up -d
-   ```
+- `db` — `pgvector/pgvector:pg16` PostgreSQL container with a persistent named volume
+- `api` — FastAPI backend container
+- `ui` — nginx serving the React build and proxying `/api` to the backend
 
-## Fallback (ECS PostgreSQL)
+All three containers use `restart: unless-stopped`. The database survives an ECS reboot but not an instance deletion or disk replacement.
 
-If RDS is not operational, the same `pgvector/pgvector:pg16` image runs on ECS via `docker-compose.yml`.
+### Health verification
+
+```bash
+IP=$(terraform output -raw public_ip)
+
+curl -f http://$IP/api/health
+
+curl -f -X POST http://$IP/api/demo/accumulation
+```
+
+Run the accumulation demo at least three times, reboot ECS, and run it again.
 
 ## Notes
 

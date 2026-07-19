@@ -7,7 +7,7 @@ TriageTrace is a temporal-memory incident-response agent that remembers operator
 ## Hosted Demo
 
 - Public repository: https://github.com/lewbei/qwen-hackathon-triage-trace
-- Live demo URL: deployed via `scripts/deploy_alibaba_ecs.sh` (update this line with the ECS public IP after apply)
+- Live demo URL: run `scripts/deploy_alibaba_ecs.sh` and then update this line with `http://<ECS_PUBLIC_IP>`
 
 ## Quickstart
 
@@ -138,7 +138,7 @@ Detailed architecture and deployment notes: `docs/architecture.mmd`, `docs/deplo
 
 ## Deployment
 
-See `docs/deployment.md` for Alibaba Cloud ECS + ApsaraDB RDS / pgvector instructions and the Docker Compose local fallback.
+See `docs/deployment.md` for Alibaba Cloud ECS deployment instructions and the Docker Compose local fallback.
 
 ## Reset
 

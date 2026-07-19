@@ -1,6 +1,6 @@
 # Alibaba Cloud Deployment
 
-This directory contains Infrastructure-as-Code for deploying TriageTrace on Alibaba Cloud (ECS + ApsaraDB RDS PostgreSQL with pgvector).
+This directory contains Infrastructure-as-Code for deploying TriageTrace on a single Alibaba Cloud ECS instance. The instance runs the React UI, FastAPI backend, and a local `pgvector/pgvector:pg16` PostgreSQL container with a persistent Docker volume.
 
 ## Quick start
 
@@ -13,7 +13,6 @@ This directory contains Infrastructure-as-Code for deploying TriageTrace on Alib
    ```
 3. Provide secrets in a `terraform.tfvars` file:
    ```hcl
-   db_password  = "your-rds-password"
    qwen_api_key = "your-dashscope-key"
    ssh_cidr     = "YOUR.IP.ADDRESS/32"
    ```
@@ -33,8 +32,8 @@ This directory contains Infrastructure-as-Code for deploying TriageTrace on Alib
 ## Notes
 
 - This is a proof-of-deployment template. Adjust instance class, security-group rules, and SSH key for your account.
-- The public UI is served on port 80 and the API is proxied through `/api`. Ports 8000 and 5173 are not exposed externally.
+- The public UI is served on port 80 and the API is proxied through `/api`. Ports 8000, 5173, and 5432 are not exposed externally.
 - SSH is allowed only from the CIDR you set in `ssh_cidr`.
-- The RDS instance must have `pgvector` enabled; Terraform creates a PostgreSQL 15 instance.
-- `cloud-init.sh` waits for RDS, installs the `vector` extension, starts `docker-compose.prod.yml`, and verifies `/api/health` before completing.
-- Containers have `restart: unless-stopped` so the demo survives an ECS reboot.
+- The pgvector extension is pre-installed in the `pgvector/pgvector:pg16` image; Alembic migrations create the extension in the application database.
+- `cloud-init.sh` installs Docker, clones the public repo, writes the environment file, starts `docker-compose.prod.yml`, and verifies `/api/health` before completing.
+- Containers use `restart: unless-stopped` so the demo survives an ECS reboot. The database is persisted in a named Docker volume, so data survives a normal reboot but not an instance deletion or disk replacement.
