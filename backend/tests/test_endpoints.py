@@ -23,7 +23,9 @@ def _configure_demo_secret(monkeypatch):
         def allow(self, ip: str) -> bool:
             return True
 
-    monkeypatch.setattr(main_module, "_demo_limiter", _NoopLimiter())
+    noop = _NoopLimiter()
+    monkeypatch.setattr(main_module, "_write_limiter", noop)
+    monkeypatch.setattr(main_module, "_read_limiter", noop)
 
 
 def _memory_json(tenant: str, content: str = "benign observation"):
@@ -346,3 +348,26 @@ async def test_demo_exception_cleanup(db_session, monkeypatch):
 
     assert cleanup_called == [scenario_tenant]
     assert await _count_tenant_records(db_session, scenario_tenant) == (0, 0)
+
+
+@pytest.mark.asyncio
+async def test_public_skill_invoke_allows_read_tools_without_secret(db_session, monkeypatch):
+    """Read-only evidence tools may be called by public demo users; write skills cannot."""
+    async def _fake_invoke_skill(session, name, arguments):
+        return {"ok": True, "name": name}
+
+    monkeypatch.setattr(main_module, "invoke_skill", _fake_invoke_skill)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        read_resp = await client.post(
+            "/api/skills/inspect_metrics/invoke",
+            json={"service": "cart-service", "time_window": "1h"},
+        )
+        write_resp = await client.post(
+            "/api/skills/remember_approved_lesson/invoke",
+            json={"tenant": "public", "provenance": "operator", "type": "procedure", "scope": "x", "subject": "x", "predicate": "x", "content": "x"},
+        )
+
+    assert read_resp.status_code == 200
+    assert read_resp.json()["result"]["ok"] is True
+    assert write_resp.status_code == 403

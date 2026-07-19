@@ -253,6 +253,7 @@ async def run_incident(
             }
 
     # Ensure required fields exist with sensible defaults.
+    parsed.setdefault("action", "none")
     parsed.setdefault("service", alert.service)
     parsed.setdefault("evidence", "No evidence provided.")
     parsed.setdefault("risk", "medium")

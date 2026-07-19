@@ -38,20 +38,31 @@ def _parse_facts(context: str) -> list[str]:
 
 
 def _extract_final_answer(prediction: str) -> str:
-    """Pull the final answer from a CoT-style response."""
-    lower = prediction.lower()
-    if "final answer:" in lower:
-        return prediction.split("final answer:", 1)[-1].strip()
+    """Pull the final answer from a CoT-style response, case-insensitively."""
+    # Split on "Final Answer:" regardless of case and line breaks.
+    match = re.split(r"final answer[:：]", prediction, flags=re.IGNORECASE, maxsplit=1)
+    if len(match) > 1:
+        return match[-1].strip().split("\n")[0].strip()
     if "</reasoning>" in prediction.lower():
-        return prediction.split("</reasoning>", 1)[-1].strip()
-    return prediction.strip()
+        return prediction.split("</reasoning>", 1)[-1].strip().split("\n")[0].strip()
+    return prediction.strip().split("\n")[0].strip()
+
+
+def _normalize_answer(text: str) -> str:
+    """Strip articles, punctuation, and extra whitespace for fuzzy matching."""
+    text = text.lower().strip()
+    text = re.sub(r"\b(the|a|an)\b", "", text)
+    text = re.sub(r"[^\w\s]", "", text)
+    return " ".join(text.split())
 
 
 def _answer_match(prediction: str, answers: list[str]) -> bool:
-    pred = _extract_final_answer(prediction).lower()
+    pred = _normalize_answer(_extract_final_answer(prediction))
+    if not pred:
+        return False
     for ans in answers:
-        a = ans.strip().lower()
-        if a in pred or pred in a:
+        a = _normalize_answer(ans)
+        if a and (a == pred or a in pred or pred in a):
             return True
     return False
 

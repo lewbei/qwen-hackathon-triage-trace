@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800" role="img" aria-labelledby="title desc">
+  <title id="title">TriageTrace project thumbnail</title>
+  <desc id="desc">Temporal memory firewall for safer AI incident response</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#091127"/>
+      <stop offset="0.55" stop-color="#121b38"/>
+      <stop offset="1" stop-color="#172047"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#6658ff" stop-opacity="0.32"/>
+      <stop offset="1" stop-color="#6658ff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8174ff"/>
+      <stop offset="1" stop-color="#5345e8"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#202b50" stop-opacity="0.96"/>
+      <stop offset="1" stop-color="#151e3c" stop-opacity="0.96"/>
+    </linearGradient>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M 48 0 L 0 0 0 48" fill="none" stroke="#93a4d8" stroke-opacity="0.055" stroke-width="1"/>
+    </pattern>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="24" flood-color="#030817" flood-opacity="0.42"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="800" fill="url(#bg)"/>
+  <rect width="1200" height="800" fill="url(#grid)"/>
+  <circle cx="850" cy="300" r="430" fill="url(#glow)"/>
+  <circle cx="1110" cy="-30" r="180" fill="#fb7185" opacity="0.06"/>
+
+  <g transform="translate(72 58)">
+    <rect width="52" height="52" rx="16" fill="url(#brand)"/>
+    <path d="M15 17h22v5H29v18h-6V22h-8z" fill="#fff"/>
+    <text x="70" y="35" fill="#ffffff" font-family="Inter,Arial,sans-serif" font-size="30" font-weight="700">TriageTrace</text>
+  </g>
+  <g transform="translate(995 68)">
+    <rect width="132" height="34" rx="17" fill="#1f2b4d" stroke="#50618d"/>
+    <circle cx="19" cy="17" r="5" fill="#6ee7b7"/>
+    <text x="34" y="22" fill="#cbd5e1" font-family="Inter,Arial,sans-serif" font-size="13" font-weight="600">QWEN CLOUD</text>
+  </g>
+
+  <g transform="translate(72 220)">
+    <text x="0" y="0" fill="#9c92ff" font-family="Inter,Arial,sans-serif" font-size="17" font-weight="700" letter-spacing="2.6">TEMPORAL MEMORY FIREWALL</text>
+    <text x="0" y="76" fill="#ffffff" font-family="Inter,Arial,sans-serif" font-size="58" font-weight="750">Safer incident response</text>
+    <text x="0" y="142" fill="#ffffff" font-family="Inter,Arial,sans-serif" font-size="58" font-weight="750">starts with memory.</text>
+    <text x="0" y="198" fill="#aab8d8" font-family="Inter,Arial,sans-serif" font-size="23">Recall approved procedures. Supersede stale advice.</text>
+    <text x="0" y="232" fill="#aab8d8" font-family="Inter,Arial,sans-serif" font-size="23">Quarantine poisoned instructions before they reach the agent.</text>
+  </g>
+
+  <g transform="translate(735 200)" filter="url(#shadow)">
+    <rect width="393" height="390" rx="24" fill="url(#panel)" stroke="#536397" stroke-width="1.5"/>
+    <g transform="translate(28 25)">
+      <rect width="55" height="26" rx="7" fill="#3d1d38" stroke="#fb7185" stroke-opacity="0.55"/>
+      <text x="14" y="18" fill="#fda4af" font-family="Inter,Arial,sans-serif" font-size="12" font-weight="700">SEV1</text>
+      <text x="69" y="18" fill="#8fa0c8" font-family="ui-monospace,monospace" font-size="12">cart-redis-latency</text>
+      <text x="0" y="72" fill="#fff" font-family="Inter,Arial,sans-serif" font-size="22" font-weight="700">Checkout latency spike</text>
+      <text x="0" y="101" fill="#9eacd0" font-family="Inter,Arial,sans-serif" font-size="15">42 failures/min · p99 2300ms</text>
+
+      <line x1="0" y1="126" x2="337" y2="126" stroke="#405078"/>
+      <text x="0" y="153" fill="#8495be" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="700" letter-spacing="1.4">MEMORY FIREWALL</text>
+
+      <g transform="translate(0 169)">
+        <rect width="337" height="48" rx="10" fill="#173b38" stroke="#34d399" stroke-opacity="0.65"/>
+        <circle cx="22" cy="24" r="8" fill="#34d399"/>
+        <path d="M18 24l3 3 6-7" fill="none" stroke="#08261f" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+        <text x="42" y="21" fill="#ecfdf5" font-family="Inter,Arial,sans-serif" font-size="14" font-weight="650">Scale Redis + restart workers</text>
+        <text x="42" y="38" fill="#6ee7b7" font-family="Inter,Arial,sans-serif" font-size="11">SIMULATED_SAFE · RECALLED</text>
+      </g>
+      <g transform="translate(0 229)">
+        <rect width="337" height="48" rx="10" fill="#3d3118" stroke="#fbbf24" stroke-opacity="0.65"/>
+        <circle cx="22" cy="24" r="8" fill="#fbbf24"/>
+        <path d="M18 24h8" stroke="#422006" stroke-width="2.4" stroke-linecap="round"/>
+        <text x="42" y="21" fill="#fffbeb" font-family="Inter,Arial,sans-serif" font-size="14" font-weight="650">Restart service pods</text>
+        <text x="42" y="38" fill="#fcd34d" font-family="Inter,Arial,sans-serif" font-size="11">SUPERSEDED · REJECTED</text>
+      </g>
+      <g transform="translate(0 289)">
+        <rect width="337" height="48" rx="10" fill="#401f2a" stroke="#fb7185" stroke-opacity="0.65"/>
+        <circle cx="22" cy="24" r="8" fill="#fb7185"/>
+        <path d="M19 21l6 6m0-6l-6 6" stroke="#450a0a" stroke-width="2.4" stroke-linecap="round"/>
+        <text x="42" y="21" fill="#fff1f2" font-family="Inter,Arial,sans-serif" font-size="14" font-weight="650">Ignore all policies…</text>
+        <text x="42" y="38" fill="#fda4af" font-family="Inter,Arial,sans-serif" font-size="11">QUARANTINED · BLOCKED</text>
+      </g>
+    </g>
+  </g>
+
+  <g transform="translate(72 680)">
+    <g>
+      <rect width="174" height="42" rx="21" fill="#162943" stroke="#34d399" stroke-opacity="0.55"/>
+      <circle cx="21" cy="21" r="6" fill="#34d399"/>
+      <text x="37" y="27" fill="#d1fae5" font-family="Inter,Arial,sans-serif" font-size="14" font-weight="650">RECALL SAFE</text>
+    </g>
+    <g transform="translate(188 0)">
+      <rect width="202" height="42" rx="21" fill="#30223d" stroke="#fb7185" stroke-opacity="0.55"/>
+      <circle cx="21" cy="21" r="6" fill="#fb7185"/>
+      <text x="37" y="27" fill="#ffe4e6" font-family="Inter,Arial,sans-serif" font-size="14" font-weight="650">QUARANTINE POISON</text>
+    </g>
+    <g transform="translate(404 0)">
+      <rect width="200" height="42" rx="21" fill="#22284c" stroke="#8174ff" stroke-opacity="0.7"/>
+      <circle cx="21" cy="21" r="6" fill="#8174ff"/>
+      <text x="37" y="27" fill="#e0e7ff" font-family="Inter,Arial,sans-serif" font-size="14" font-weight="650">HUMAN APPROVAL</text>
+    </g>
+  </g>
+
+  <text x="72" y="760" fill="#7182ac" font-family="Inter,Arial,sans-serif" font-size="14">Qwen-powered incident-response agents with memory you can trust</text>
+</svg>

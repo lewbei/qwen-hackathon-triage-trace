@@ -15,7 +15,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.agent import run_incident
 from backend.app.config import settings
 from backend.app.decisions import apply_operator_decision
-from backend.app.demo import _scenario_tenant, run_accumulation_demo, run_winning_scenario
+from backend.app.demo import (
+    _scenario_tenant,
+    build_cart_service_alert,
+    run_accumulation_demo,
+    run_winning_scenario,
+    seed_cart_service_history,
+)
 from backend.app.memory import create_memory, get_memory_lineage
 from backend.app.models import AsyncSessionLocal, MemoryRecord, RunRecord, get_db
 from backend.app.schemas import (
@@ -58,7 +64,8 @@ class _DemoRateLimiter:
         return True
 
 
-_demo_limiter = _DemoRateLimiter()
+_write_limiter = _DemoRateLimiter(max_requests=5, window_seconds=60)
+_read_limiter = _DemoRateLimiter(max_requests=60, window_seconds=60)
 
 
 def _client_ip(request: Request) -> str:
@@ -125,10 +132,13 @@ def _serialize_events(events: list) -> list[dict[str, Any]]:
 @app.post("/api/agent/runs")
 async def start_run(
     alert: Alert,
+    request: Request,
     mode: Mode = Mode.stateless,
     db: AsyncSession = Depends(get_db),
     x_demo_secret: str = Header(default=""),
 ) -> RunOut:
+    if not _write_limiter.allow(_client_ip(request)):
+        raise HTTPException(status_code=429, detail="Too many demo requests. Please wait a minute.")
     alert.tenant = _resolve_tenant(alert.tenant, x_demo_secret)
     run = await run_incident(db, alert, mode)
     record = RunRecord(
@@ -201,9 +211,12 @@ async def _stream_run(alert: Alert, mode: Mode):
 @app.post("/api/agent/runs/stream")
 async def stream_run(
     alert: Alert,
+    request: Request,
     mode: Mode = Mode.stateless,
     x_demo_secret: str = Header(default=""),
 ) -> StreamingResponse:
+    if not _write_limiter.allow(_client_ip(request)):
+        raise HTTPException(status_code=429, detail="Too many demo requests. Please wait a minute.")
     alert.tenant = _resolve_tenant(alert.tenant, x_demo_secret)
     return StreamingResponse(_stream_run(alert, mode), media_type="text/event-stream")
 
@@ -249,9 +262,12 @@ async def get_events(
 async def decide(
     run_id: str,
     decision: DecisionIn,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     x_demo_secret: str = Header(default=""),
 ) -> dict[str, Any]:
+    if not _write_limiter.allow(_client_ip(request)):
+        raise HTTPException(status_code=429, detail="Too many demo requests. Please wait a minute.")
     record = await db.get(RunRecord, UUID(run_id))
     if not record or not record.proposal:
         raise HTTPException(status_code=404, detail="Proposal not found")
@@ -269,8 +285,21 @@ async def get_skills() -> dict[str, Any]:
 async def invoke_skill_endpoint(
     name: str,
     arguments: dict[str, Any],
+    request: Request,
     db: AsyncSession = Depends(get_db),
+    x_demo_secret: str = Header(default=""),
 ) -> dict[str, Any]:
+    # Skill invocation can write memories with arbitrary provenance; restrict it to
+    # demo administrators who provide the configured secret or to a rate-limited
+    # public surface for read-only evidence tools.
+    is_admin = _is_authenticated(x_demo_secret)
+    if not is_admin:
+        if name in {"search_approved_memories", "inspect_metrics", "list_recent_deployments", "read_current_runbook"}:
+            # Read-only evidence tools are safe for public demo use but still rate-limited.
+            if not _read_limiter.allow(_client_ip(request)):
+                raise HTTPException(status_code=429, detail="Too many demo requests. Please wait a minute.")
+        else:
+            raise HTTPException(status_code=403, detail="Skill invocation restricted. Provide a demo secret or use the public demo endpoints.")
     try:
         result = await invoke_skill(db, name, arguments)
         return {"skill": name, "result": result}
@@ -303,6 +332,7 @@ async def add_untrusted_memory(
     subject: str,
     predicate: str,
     content: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     x_demo_secret: str = Header(default=""),
 ) -> MemoryRecordSchema:
@@ -310,6 +340,8 @@ async def add_untrusted_memory(
     accepted from the client; they are overridden to external/observation so the
     memory firewall always screens the content.
     """
+    if not _write_limiter.allow(_client_ip(request)):
+        raise HTTPException(status_code=429, detail="Too many demo requests. Please wait a minute.")
     tenant = _resolve_tenant(tenant, x_demo_secret)
     # Trusted provenance values may only be set by internal server workflows
     # (operator approval, simulated sandbox execution, etc.). A public caller cannot
@@ -438,7 +470,7 @@ async def winning_scenario(
     Each call runs in an isolated tenant to avoid cross-user interference.
     Rate-limited per IP and the transient tenant is cleaned up after the response.
     """
-    if not _demo_limiter.allow(_client_ip(request)):
+    if not _write_limiter.allow(_client_ip(request)):
         raise HTTPException(status_code=429, detail="Too many demo requests. Please wait a minute.")
     tenant = _scenario_tenant()
     try:
@@ -462,7 +494,7 @@ async def accumulation(
     and then runs a fresh incident to show that memory recalls only the current safe
     procedure. Not for production use.
     """
-    if not _demo_limiter.allow(_client_ip(request)):
+    if not _write_limiter.allow(_client_ip(request)):
         raise HTTPException(status_code=429, detail="Too many demo requests. Please wait a minute.")
     tenant = _scenario_tenant()
     try:
@@ -472,4 +504,31 @@ async def accumulation(
         raise
     background_tasks.add_task(_cleanup_demo_tenant, tenant)
     return result
+
+
+@app.post("/api/demo/setup")
+async def setup_production_demo(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Seed the default tenant with the cart-service production demo history.
+
+    This is a destructive reset: it clears all memories and runs for the default
+    tenant and re-creates the canonical old/superseded, new/active, and poison/
+    quarantined records. It is rate-limited to prevent abuse.
+    """
+    if not _write_limiter.allow(_client_ip(request)):
+        raise HTTPException(status_code=429, detail="Too many setup requests. Please wait a minute.")
+    tenant = settings.default_tenant
+    old, new, poison, alert = await seed_cart_service_history(db, tenant)
+    return {
+        "status": "seeded",
+        "tenant": tenant,
+        "alert": alert.model_dump(),
+        "memories": {
+            "old": {"id": str(old.id), "status": old.status, "content": old.content},
+            "new": {"id": str(new.id), "status": new.status, "content": new.content},
+            "poison": {"id": str(poison.id), "status": poison.status, "content": poison.content},
+        },
+    }
 

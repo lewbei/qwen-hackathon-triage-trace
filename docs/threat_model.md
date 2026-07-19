@@ -26,7 +26,7 @@ TriageTrace assumes the environment around the agent is hostile. This document m
 1. **Poison-pattern check.** Any memory from `log`, `model`, `tool`, or unknown provenance matching a poison regex is quarantined.
 2. **Policy contradiction check.** A candidate memory is checked against active `policy` memories in the same scope/subject. If it contains an action forbidden by a `Never ...` policy, it is quarantined.
 3. **Authority and freshness check.** Existing active memories with higher source authority supersede new ones; memories with equal authority only supersede if they have a strictly newer source timestamp. Older or equal-timestamp arrivals are quarantined as stale.
-4. **Approval boundary.** No `procedure` or `preference` becomes active without operator approval followed by a positive simulator prediction (`approved_execution` or `operator` provenance, authority ≥80/100).
+4. **Approval boundary.** No `procedure` becomes active without operator approval followed by a positive simulator prediction (`approved_execution` provenance, authority ≥80/100). `preference` and `policy` memories may become active directly from trusted provenance (`operator` or `approved_execution`), including operator rejections that record actions to avoid.
 
 ## 4. What is still out of scope
 

@@ -1,3 +1,5 @@
+import os
+
 import pytest
 import pytest_asyncio
 from sqlalchemy import delete
@@ -7,7 +9,10 @@ from backend.app.main import app
 from backend.app.models import Base, MemoryRecord, get_db
 from backend.app.qwen import qwen
 
-TEST_DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/triagetrace"
+TEST_DATABASE_URL = os.environ.get(
+    "TEST_DATABASE_URL",
+    "postgresql+asyncpg://postgres:postgres@localhost:5432/triagetrace",
+)
 
 
 def _make_session_maker():

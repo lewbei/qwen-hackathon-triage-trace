@@ -122,9 +122,11 @@ async def _llm_detect_poison(content: str) -> str | None:
         text = (response.get("content") or "").strip().upper()
         if text.startswith("YES"):
             return "llm flagged as malicious"
-    except Exception:
-        # If the LLM call fails, do not block the write.
-        pass
+    except Exception as exc:
+        # If the LLM check is enabled but cannot complete, fail safe: quarantine
+        # the memory so a human can review it instead of allowing a potentially
+        # malicious memory into active recall.
+        return f"llm poison check failed: {exc}"
     return None
 
 

@@ -7,7 +7,14 @@ TriageTrace is a temporal-memory incident-response agent that remembers operator
 ## Hosted Demo
 
 - Public repository: https://github.com/lewbei/qwen-hackathon-triage-trace
-- Live demo URL: run `scripts/deploy_alibaba_ecs.sh` and then update this line with `http://<ECS_PUBLIC_IP>`
+- Live demo URL: http://47.251.179.138/
+
+## Judge assets
+
+- `docs/JUDGE_PACKET.md` — quick-start, endpoints, and key files.
+- `docs/DEMO_SCRIPT.md` — 3-minute walkthrough for presenters.
+- `docs/RUBRIC_SCORECARD.md` — mapping of judging criteria to evidence.
+- `docs/screenshots/` — captured UI walkthrough.
 
 ## Quickstart
 
@@ -71,7 +78,7 @@ Adversarial-memory metrics:
 Scenario highlights:
 
 - **Repeated incidents**: stateless often returns generic or unsafe restarts; memory recalls approved-and-simulated procedures and produces the exact remediation.
-- **Operator-policy**: memory mode respects hard operator constraints (e.g., never restart the database, never auto-refund), while the identical stateless baseline proposes the forbidden action.
+- **Operator-policy**: memory mode recalls operator constraints (e.g., never restart the database, never auto-refund) and produces compliant remediations, while the stateless baseline often lacks that context and either declines or proposes an action that may violate policy.
 - **Temporal conflict**: memory mode selects the newer simulated-safe procedure/runbook and supersedes stale entries; stale-memory recall is 0%.
 - **Poisoned log**: MemoryGate quarantines malicious instructions embedded in logs; the agent declines or recalls the safe simulated-safe procedure instead.
 - **Irrelevant overload**: despite five irrelevant observations seeded in the same scope, the correct procedure is recalled and the agent stays on target.
@@ -110,10 +117,9 @@ python backend/evaluations/benchmarks/asb_memorygate.py
 
 `backend/evaluations/benchmarks/memoryagentbench.py` loads the public `Conflict_Resolution` split and tests multi-hop fact retrieval and temporal-conflict resolution. Latest run: **1 sample, 5 questions** (committed to `evaluations/memoryagentbench.json`).
 
-- **With all facts visible**: 4 / 5 correct (80%) — Qwen3.7-plus reasons correctly from the provided facts.
-- **With top-50 retrieval only**: 1 / 5 correct (20%) — retrieval, not reasoning, is the bottleneck.
+- **Result**: 1 / 5 correct (20%).
 
-This pilot confirms the temporal firewall works for facts once the right memories are surfaced, and it identifies multi-hop retrieval as the next improvement area.
+The benchmark exposes both a scoring bug (now fixed) and the actual reasoning challenge: when the model is forced to use only the provided facts and trust the most recent one, it still sometimes falls back on outside knowledge or picks the wrong conflict branch on ambiguous multi-hop chains. The runner currently retrieves all 455 facts for the sample, so the 20% score reflects reasoning under full recall, not a retrieval bottleneck. Retrieval experiments are the next improvement area.
 
 Run:
 

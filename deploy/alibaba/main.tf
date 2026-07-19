@@ -70,6 +70,12 @@ resource "random_password" "db" {
   special = false
 }
 
+# Secret that protects destructive demo endpoints and privileged skill calls.
+resource "random_password" "demo_secret" {
+  length  = 32
+  special = false
+}
+
 # ECS instance running backend + frontend + pgvector
 resource "alicloud_instance" "triagetrace" {
   image_id                   = var.image_id != "" ? var.image_id : data.alicloud_images.ubuntu.images[0].id
@@ -89,6 +95,7 @@ resource "alicloud_instance" "triagetrace" {
     db_user      = var.db_user
     db_password  = random_password.db.result
     qwen_api_key = var.qwen_api_key
+    demo_secret  = random_password.demo_secret.result
   }))
 }
 
