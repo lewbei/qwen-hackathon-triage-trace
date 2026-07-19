@@ -1,9 +1,11 @@
+import pytest
 import pytest_asyncio
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from backend.app.main import app
 from backend.app.models import Base, MemoryRecord, get_db
+from backend.app.qwen import qwen
 
 TEST_DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/triagetrace"
 
@@ -36,3 +38,13 @@ async def db_session():
     async with maker() as session:
         yield session
     await engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def mock_qwen_embed(monkeypatch):
+    """Prevent tests from calling the real Qwen embedding endpoint."""
+
+    async def _fake_embed(texts: list[str], dimensions: int = 1536) -> list[list[float]]:
+        return [[0.0] * dimensions for _ in texts]
+
+    monkeypatch.setattr(qwen, "embed", _fake_embed)
