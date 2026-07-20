@@ -1,21 +1,55 @@
 flowchart LR
-    subgraph client ["Client"]
-        browser["React Judge Dashboard (browser)"]
-    end
-    subgraph gateway ["Public Ingress"]
-        nginx["Nginx UI Container"]
-    end
-    subgraph service ["Application"]
-        api["FastAPI TriageTrace Backend"]
-    end
-    subgraph datastore ["Durable State"]
-        pg["PostgreSQL 16 + pgvector"]
-    end
-    subgraph external ["External AI"]
-        qwen["Qwen Cloud"]
+    Incident["New Incident"] --> Agent["Qwen Incident Agent"]
+    Evidence["Metrics / Deployments / Runbooks"] --> Agent
+
+    subgraph ReadPlane["Memory Read Plane"]
+        Scope["Tenant + Scope + Validity Filter"]
+        Vector["Vector Candidate Search"]
+        Rerank["Qwen Rerank"]
+        Score["Relevance + Authority + Freshness + Utility"]
+        MMR["MMR Diversity Selection"]
+        Pack["Policy-First 800-Token Pack"]
+
+        Scope --> Vector --> Rerank --> Score --> MMR --> Pack
     end
 
-    browser <-->|"UI + REST/SSE"| nginx
-    nginx -->|"Proxies /api"| api
-    api -->|"Reads/Writes memories + runs"| pg
-    api -.->|"Qwen Cloud: chat, embed, rerank"| qwen
+    MemoryDB[("Temporal Memory Store<br/>PostgreSQL + pgvector")] --> Scope
+    Pack --> Agent
+
+    Agent --> Proposal["Structured Remediation Proposal"]
+    Proposal --> Human{"Operator Decision"}
+
+    Human -->|"Approve"| Simulation{"Deterministic Simulation"}
+    Human -->|"Reject"| Avoid["Create Operator 'Avoid' Preference"]
+
+    Simulation -->|"Predicted improvement"| Candidate["Candidate Procedure"]
+    Simulation -->|"Predicted regression"| Avoid
+
+    subgraph WritePlane["Temporal Memory Firewall — Write Plane"]
+        Redact["Redact Sensitive Data"]
+        Poison["Poison / Policy-Contradiction Gate"]
+        Arbitration{"Authority + Source-Time Arbitration"}
+        Safe["simulated_safe"]
+        Superseded["superseded"]
+        Quarantined["quarantined"]
+        Lock["Per-Key Advisory Lock"]
+
+        Redact --> Poison --> Arbitration
+        Lock --> Arbitration
+        Arbitration --> Safe
+        Arbitration --> Superseded
+        Arbitration --> Quarantined
+    end
+
+    Candidate --> Redact
+    Avoid --> Redact
+
+    Safe --> MemoryDB
+    Superseded --> MemoryDB
+    Quarantined --> MemoryDB
+
+    Qwen["Qwen Cloud<br/>Reasoning · Classification · Embedding · Reranking"]
+    Agent -.-> Qwen
+    Poison -.-> Qwen
+    Vector -.-> Qwen
+    Rerank -.-> Qwen

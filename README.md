@@ -4,7 +4,7 @@
 
 **Track 1: MemoryAgent** — Qwen Hackathon 2026
 
-TriageTrace is a temporal-memory incident-response agent that remembers operator-approved, simulation-screened remediations and refuses poisoned, contradictory, or obsolete memories. It uses Qwen Cloud (`qwen3.7-plus` for reasoning, `text-embedding-v4` for memory vectors, plus slots for `qwen3.6-flash` extraction and `qwen3-rerank`) to propose, refine, and audit remediations.
+TriageTrace is a **temporal memory control plane** for Qwen-powered incident agents: every memory write is screened by human approval, predicted operational outcome, source authority and event time before it can influence a future decision. Unlike ordinary RAG memory, conflicting records are never resolved by similarity or insertion order—authoritative new evidence supersedes stale procedures, while poisoned, lower-authority and out-of-order memories remain quarantined and auditable.
 
 ## Hosted Demo
 

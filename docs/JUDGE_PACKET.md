@@ -2,7 +2,7 @@
 
 ## One-line pitch
 
-TriageTrace is a **temporal memory firewall** for Qwen-powered incident-response agents. It lets on-call teams accumulate approved remediation procedures across sessions, automatically supersede stale runbooks, and quarantine explicit poisoned or policy-violating instructions before the agent ever proposes them. Obfuscated adversarial content remains an open weakness.
+TriageTrace is a **temporal memory control plane** for Qwen-powered incident agents: every memory write is screened by human approval, predicted operational outcome, source authority and event time before it can influence a future decision. Unlike ordinary RAG memory, conflicting records are never resolved by similarity or insertion order—authoritative new evidence supersedes stale procedures, while poisoned, lower-authority and out-of-order memories remain quarantined and auditable.
 
 ## What the demo shows
 
