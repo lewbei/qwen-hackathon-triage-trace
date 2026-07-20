@@ -373,3 +373,56 @@ async def test_public_skill_invoke_allows_read_tools_without_secret(db_session, 
     assert read_resp.status_code == 200
     assert read_resp.json()["result"]["ok"] is True
     assert write_resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_public_search_approved_memories_cannot_override_tenant(db_session, monkeypatch):
+    """Public search_approved_memories must be bound to the demo tenant cookie."""
+    captured: dict[str, Any] = {}
+
+    async def _fake_invoke_skill(session, name, arguments):
+        captured["name"] = name
+        captured["arguments"] = arguments
+        return {"packed": [], "omitted": [], "rejected": [], "meta": {}}
+
+    monkeypatch.setattr(main_module, "invoke_skill", _fake_invoke_skill)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test", cookies={"demo_tenant": "demo-test-123"}
+    ) as client:
+        response = await client.post(
+            "/api/skills/search_approved_memories/invoke",
+            json={"tenant": "attacker-tenant", "service": "cart-service", "symptom": "redis timeout"},
+        )
+
+    assert response.status_code == 200
+    assert captured["name"] == "search_approved_memories"
+    assert captured["arguments"]["tenant"] == "demo-test-123"
+    assert captured["arguments"]["tenant"] != "attacker-tenant"
+
+
+@pytest.mark.asyncio
+async def test_stream_run_sets_demo_tenant_cookie(db_session, monkeypatch):
+    """The streaming run endpoint must return the demo tenant cookie on the StreamingResponse."""
+    async def _fake_stream_run(alert, mode):
+        yield "data: {}\n\n"
+
+    monkeypatch.setattr(main_module, "_stream_run", _fake_stream_run)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/api/agent/runs/stream",
+            json={
+                "service": "cart-service",
+                "symptom": "redis timeout",
+                "severity": "critical",
+                "context": "ETIMEDOUT redis-cart:6379",
+                "tenant": "default",
+            },
+            params={"mode": "stateless"},
+        )
+
+    assert response.status_code == 200
+    set_cookie = response.headers.get("set-cookie", "")
+    assert "demo_tenant=" in set_cookie
+    assert "HttpOnly" in set_cookie

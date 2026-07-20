@@ -10,6 +10,7 @@ from backend.app.config import settings
 from backend.app.main import app
 from backend.app.memory import create_memory
 from backend.app.qwen import qwen
+from backend.app.schemas import Mode
 from backend.tests.conftest import TEST_DEMO_SECRET
 
 
@@ -402,3 +403,45 @@ async def test_approved_harmful_compound_action_rejected_by_simulation(db_sessio
     assert data["status"] == "rejected_by_simulation"
     assert data["simulated_safe"] is False
     assert data["outcome"]["improved"] is False
+
+
+@pytest.mark.asyncio
+async def test_alert_service_and_symptom_are_redacted(db_session, monkeypatch):
+    """Sensitive credential patterns in service/symptom/context must be redacted before prompts."""
+    from backend.app.schemas import Alert
+
+    captured_messages: list[list[dict[str, str]]] = []
+
+    async def _capture_chat(*, messages, tools=None, tool_choice=None, temperature=0.2, max_tokens=1024, **kwargs):
+        captured_messages.append(messages)
+        return {
+            "content": json.dumps({
+                "action": "none",
+                "service": "cart-service",
+                "evidence": "Insufficient evidence",
+                "risk": "low",
+                "approval_required": False,
+                "insufficient_evidence": True,
+            }),
+            "model": "qwen3.7-plus",
+            "token_usage": {"prompt": 100, "completion": 50, "total": 150},
+            "latency_ms": 500.0,
+        }
+
+    monkeypatch.setattr(qwen, "chat", _capture_chat)
+    monkeypatch.setattr(qwen, "embed", AsyncMock(return_value=[[0.0] * 1536]))
+
+    alert = Alert(
+        tenant="default",
+        service="cart-service api-key=super-secret",
+        symptom="password=leaked redis timeout",
+        context="Redis latency spiked; token=abc123",
+        severity="critical",
+    )
+    await agent_module.run_incident(db_session, alert, Mode.stateless)
+
+    assert captured_messages
+    prompt_text = json.dumps(captured_messages[-1])
+    assert "super-secret" not in prompt_text
+    assert "leaked" not in prompt_text
+    assert "abc123" not in prompt_text

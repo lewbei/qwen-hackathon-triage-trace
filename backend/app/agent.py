@@ -208,8 +208,14 @@ async def _run_incident_unsafe(
     mode: Mode,
     event_queue: asyncio.Queue | None = None,
 ) -> dict[str, Any]:
-    # Redact sensitive patterns from the incident context before any model call or persistence.
-    alert = alert.model_copy(update={"context": redact(alert.context)})
+    # Redact sensitive patterns from all textual alert fields before any model call or persistence.
+    alert = alert.model_copy(
+        update={
+            "service": redact(alert.service),
+            "symptom": redact(alert.symptom),
+            "context": redact(alert.context),
+        }
+    )
 
     run_id = str(uuid.uuid4())
     events: list[RunEvent] = []
@@ -351,8 +357,14 @@ async def run_incident(
     event_queue: asyncio.Queue | None = None,
 ) -> dict[str, Any]:
     """Public wrapper that runs the agent and surfaces any failure as a structured error."""
-    # Always redact before any model call or persistence.
-    alert = alert.model_copy(update={"context": redact(alert.context)})
+    # Always redact all textual alert fields before any model call or persistence.
+    alert = alert.model_copy(
+        update={
+            "service": redact(alert.service),
+            "symptom": redact(alert.symptom),
+            "context": redact(alert.context),
+        }
+    )
 
     try:
         return await _run_incident_unsafe(db, alert, mode, event_queue)

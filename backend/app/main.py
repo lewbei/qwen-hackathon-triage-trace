@@ -249,14 +249,22 @@ async def _stream_run(alert: Alert, mode: Mode):
 async def stream_run(
     alert: Alert,
     request: Request,
-    response: Response,
     mode: Mode = Mode.stateless,
     x_demo_secret: str = Header(default=""),
 ) -> StreamingResponse:
     if not _write_limiter.allow(_client_ip(request)):
         raise HTTPException(status_code=429, detail="Too many demo requests. Please wait a minute.")
-    alert.tenant = _resolve_tenant(alert.tenant, x_demo_secret, request, response)
-    return StreamingResponse(_stream_run(alert, mode), media_type="text/event-stream")
+    demo_tenant = _read_demo_tenant(request)
+    if not demo_tenant:
+        demo_tenant = _scenario_tenant()
+    if _is_authenticated(x_demo_secret):
+        resolved_tenant = alert.tenant
+    else:
+        resolved_tenant = demo_tenant
+    alert.tenant = resolved_tenant
+    stream = StreamingResponse(_stream_run(alert, mode), media_type="text/event-stream")
+    stream.set_cookie(key="demo_tenant", value=demo_tenant, httponly=True, samesite="lax", path="/")
+    return stream
 
 
 @app.get("/api/agent/runs/{run_id}")
@@ -339,10 +347,18 @@ async def invoke_skill_endpoint(
     # public surface for read-only evidence tools.
     is_admin = _is_authenticated(x_demo_secret)
     if not is_admin:
-        if name in {"search_approved_memories", "inspect_metrics", "list_recent_deployments", "read_current_runbook"}:
+        if name in {"inspect_metrics", "list_recent_deployments", "read_current_runbook"}:
             # Read-only evidence tools are safe for public demo use but still rate-limited.
             if not _read_limiter.allow(_client_ip(request)):
                 raise HTTPException(status_code=429, detail="Too many demo requests. Please wait a minute.")
+        elif name == "search_approved_memories":
+            # Public callers may only search their own demo tenant memories.
+            if not _read_limiter.allow(_client_ip(request)):
+                raise HTTPException(status_code=429, detail="Too many demo requests. Please wait a minute.")
+            demo_tenant = _read_demo_tenant(request)
+            if not demo_tenant:
+                raise HTTPException(status_code=403, detail="Demo tenant not initialized")
+            arguments = {**arguments, "tenant": demo_tenant}
         else:
             raise HTTPException(status_code=403, detail="Skill invocation restricted. Provide a demo secret or use the public demo endpoints.")
     try:
