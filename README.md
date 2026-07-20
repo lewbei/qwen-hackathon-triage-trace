@@ -20,7 +20,7 @@ TriageTrace is a temporal-memory incident-response agent that remembers operator
 
 ```bash
 cp .env.example .env
-# Add your Qwen Cloud API key to .env (free-tier keys must use the dashscope-intl endpoint already set in .env.example)
+# Add your Qwen Cloud API key to .env (the default endpoint in .env.example is for token-plan ap-southeast-1 keys)
 docker compose up --build
 ```
 

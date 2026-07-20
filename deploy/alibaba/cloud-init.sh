@@ -26,7 +26,7 @@ runcmd:
   - |
     cat > /opt/triagetrace/.env <<'EOF'
 QWEN_API_KEY=${qwen_api_key}
-QWEN_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+QWEN_BASE_URL=https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1
 DATABASE_URL=postgresql+asyncpg://${db_user}:${db_password}@db:5432/triagetrace
 SYNC_DATABASE_URL=postgresql://${db_user}:${db_password}@db:5432/triagetrace
 POSTGRES_USER=${db_user}
