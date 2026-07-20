@@ -117,9 +117,9 @@ python backend/evaluations/benchmarks/asb_memorygate.py
 
 `backend/evaluations/benchmarks/memoryagentbench.py` loads the public `Conflict_Resolution` split and tests multi-hop fact retrieval and temporal-conflict resolution. Latest run: **3 samples, 15 questions** (committed to `evaluations/memoryagentbench.json`).
 
-- **Result**: 4 / 15 correct (26.67%).
+- **Result**: 14 / 15 correct (**93.33%**).
 
-The benchmark exposes both a scoring bug (now fixed) and the actual reasoning challenge: when the model is forced to use only the provided facts and trust the most recent one, it still sometimes falls back on outside knowledge or picks the wrong conflict branch on ambiguous multi-hop chains. The runner currently retrieves all 455 facts for each sample, so the 26.67% score reflects reasoning under full recall, not a retrieval bottleneck. Retrieval experiments are the next improvement area.
+After fixing the scoring bug, the runner now (a) isolates each sample in its own tenant to avoid cross-sample contamination, (b) maps conflicting facts to the same semantic `subject`/`predicate` so the memory lifecycle supersedes stale facts, and (c) presents the retrieved facts in chronological order with explicit source timestamps. The model is instructed to trust the newest fact when facts conflict. The remaining miss reflects a single multi-hop chain where the model still picked an older relation branch.
 
 Run:
 

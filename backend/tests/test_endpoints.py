@@ -55,7 +55,9 @@ async def test_public_memory_write_rejects_trusted_provenance(db_session):
         response = await _post_memory(client, params=_memory_json("attacker-tenant"))
     assert response.status_code == 200
     data = response.json()
-    assert data["tenant"] == settings.default_tenant
+    # Public callers are bound to a per-browser demo tenant; the requested tenant is ignored.
+    assert data["tenant"] != "attacker-tenant"
+    assert data["tenant"].startswith("demo-")
     assert data["provenance"] == "external"
     assert data["type"] == "observation"
 

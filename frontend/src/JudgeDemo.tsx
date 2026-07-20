@@ -244,28 +244,28 @@ const rubricEvidence = [
     weight: '30%',
     headline: 'Temporal memory firewall',
     detail: 'Qwen-powered agent that accumulates approved-and-simulated procedures, supersedes stale memories, and quarantines poison.',
-    evidence: 'docs/architecture.mmd',
+    evidence: 'https://github.com/lewbei/qwen-hackathon-triage-trace/blob/main/docs/architecture.mmd',
   },
   {
     criterion: 'Technical Depth & Engineering',
     weight: '30%',
     headline: 'Lifecycle + retrieval + simulation',
     detail: 'Conflict decision table, advisory locks, pgvector retrieval, token packing, and deterministic simulation gate.',
-    evidence: 'backend/tests',
+    evidence: 'https://github.com/lewbei/qwen-hackathon-triage-trace/tree/main/backend/tests',
   },
   {
     criterion: 'Problem Value & Impact',
     weight: '25%',
     headline: 'Safer incident-response agents',
     detail: 'Prevents catastrophic actions from stale runbooks, untrusted external instructions, and stateless reasoning.',
-    evidence: 'README.md',
+    evidence: 'https://github.com/lewbei/qwen-hackathon-triage-trace/blob/main/README.md',
   },
   {
     criterion: 'Presentation & Documentation',
     weight: '15%',
     headline: 'Judge-ready demo + ECS deployment',
     detail: 'Production triage UI, Alibaba Terraform, CI, and live smoke-tested health endpoint.',
-    evidence: 'deploy/alibaba/README.md',
+    evidence: 'https://github.com/lewbei/qwen-hackathon-triage-trace/blob/main/deploy/alibaba/README.md',
   },
 ]
 

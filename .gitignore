@@ -22,6 +22,9 @@ htmlcov/
 venv/
 .devin/config.local.json
 
+# Downloaded benchmark datasets
+data/*.jsonl
+
 # Terraform
 **/.terraform/*
 *.tfstate

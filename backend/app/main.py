@@ -7,7 +7,7 @@ from enum import Enum
 from typing import Any
 from uuid import UUID
 
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Header, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Header, Request, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -80,9 +80,28 @@ def _is_authenticated(secret: str) -> bool:
     return bool(settings.demo_secret and secret == settings.demo_secret)
 
 
-def _resolve_tenant(requested: str, secret: str) -> str:
-    """Public callers may only access the default tenant; the secret unlocks others."""
-    return requested if _is_authenticated(secret) else settings.default_tenant
+def _public_tenant(request: Request, response: Response) -> str:
+    """Return the per-browser demo tenant, creating it and setting a cookie if absent."""
+    cookie = request.cookies.get("demo_tenant")
+    if cookie and cookie.startswith("demo-"):
+        return cookie
+    tenant = _scenario_tenant()
+    response.set_cookie(key="demo_tenant", value=tenant, httponly=True, samesite="lax", path="/")
+    return tenant
+
+
+def _read_demo_tenant(request: Request) -> str | None:
+    cookie = request.cookies.get("demo_tenant")
+    if cookie and cookie.startswith("demo-"):
+        return cookie
+    return None
+
+
+def _resolve_tenant(requested: str, secret: str, request: Request, response: Response) -> str:
+    """Authenticated callers may access any tenant; public callers are bound to their demo cookie."""
+    if _is_authenticated(secret):
+        return requested
+    return _public_tenant(request, response)
 
 
 async def _cleanup_demo_tenant(tenant: str) -> None:
@@ -133,13 +152,14 @@ def _serialize_events(events: list) -> list[dict[str, Any]]:
 async def start_run(
     alert: Alert,
     request: Request,
+    response: Response,
     mode: Mode = Mode.stateless,
     db: AsyncSession = Depends(get_db),
     x_demo_secret: str = Header(default=""),
 ) -> RunOut:
     if not _write_limiter.allow(_client_ip(request)):
         raise HTTPException(status_code=429, detail="Too many demo requests. Please wait a minute.")
-    alert.tenant = _resolve_tenant(alert.tenant, x_demo_secret)
+    alert.tenant = _resolve_tenant(alert.tenant, x_demo_secret, request, response)
     run = await run_incident(db, alert, mode)
     record = RunRecord(
         id=UUID(run["id"]),
@@ -212,25 +232,28 @@ async def _stream_run(alert: Alert, mode: Mode):
 async def stream_run(
     alert: Alert,
     request: Request,
+    response: Response,
     mode: Mode = Mode.stateless,
     x_demo_secret: str = Header(default=""),
 ) -> StreamingResponse:
     if not _write_limiter.allow(_client_ip(request)):
         raise HTTPException(status_code=429, detail="Too many demo requests. Please wait a minute.")
-    alert.tenant = _resolve_tenant(alert.tenant, x_demo_secret)
+    alert.tenant = _resolve_tenant(alert.tenant, x_demo_secret, request, response)
     return StreamingResponse(_stream_run(alert, mode), media_type="text/event-stream")
 
 
 @app.get("/api/agent/runs/{run_id}")
 async def get_run(
     run_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     x_demo_secret: str = Header(default=""),
 ) -> RunOut:
     record = await db.get(RunRecord, UUID(run_id))
     if not record:
         raise HTTPException(status_code=404, detail="Run not found")
-    if record.tenant != settings.default_tenant and not _is_authenticated(x_demo_secret):
+    demo_tenant = _read_demo_tenant(request)
+    if record.tenant != settings.default_tenant and record.tenant != demo_tenant and not _is_authenticated(x_demo_secret):
         raise HTTPException(status_code=404, detail="Run not found")
     return RunOut(
         id=record.id,
@@ -247,13 +270,15 @@ async def get_run(
 @app.get("/api/agent/runs/{run_id}/events")
 async def get_events(
     run_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     x_demo_secret: str = Header(default=""),
 ) -> dict[str, Any]:
     record = await db.get(RunRecord, UUID(run_id))
     if not record:
         raise HTTPException(status_code=404, detail="Run not found")
-    if record.tenant != settings.default_tenant and not _is_authenticated(x_demo_secret):
+    demo_tenant = _read_demo_tenant(request)
+    if record.tenant != settings.default_tenant and record.tenant != demo_tenant and not _is_authenticated(x_demo_secret):
         raise HTTPException(status_code=404, detail="Run not found")
     return {"run_id": run_id, "status": record.status, "events": record.events}
 
@@ -271,7 +296,8 @@ async def decide(
     record = await db.get(RunRecord, UUID(run_id))
     if not record or not record.proposal:
         raise HTTPException(status_code=404, detail="Proposal not found")
-    if record.tenant != settings.default_tenant and not _is_authenticated(x_demo_secret):
+    demo_tenant = _read_demo_tenant(request)
+    if record.tenant != settings.default_tenant and record.tenant != demo_tenant and not _is_authenticated(x_demo_secret):
         raise HTTPException(status_code=404, detail="Proposal not found")
     return await apply_operator_decision(db, record, decision.approved, decision.feedback)
 
@@ -311,11 +337,13 @@ async def invoke_skill_endpoint(
 
 @app.get("/api/memories")
 async def list_memories(
+    request: Request,
+    response: Response,
     tenant: str = settings.default_tenant,
     db: AsyncSession = Depends(get_db),
     x_demo_secret: str = Header(default=""),
 ) -> list[MemoryRecordSchema]:
-    tenant = _resolve_tenant(tenant, x_demo_secret)
+    tenant = _resolve_tenant(tenant, x_demo_secret, request, response)
     result = await db.execute(
         select(MemoryRecord).where(MemoryRecord.tenant == tenant).order_by(MemoryRecord.source_timestamp.desc()).limit(100)
     )
@@ -333,6 +361,7 @@ async def add_untrusted_memory(
     predicate: str,
     content: str,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     x_demo_secret: str = Header(default=""),
 ) -> MemoryRecordSchema:
@@ -342,7 +371,7 @@ async def add_untrusted_memory(
     """
     if not _write_limiter.allow(_client_ip(request)):
         raise HTTPException(status_code=429, detail="Too many demo requests. Please wait a minute.")
-    tenant = _resolve_tenant(tenant, x_demo_secret)
+    tenant = _resolve_tenant(tenant, x_demo_secret, request, response)
     # Trusted provenance values may only be set by internal server workflows
     # (operator approval, simulated sandbox execution, etc.). A public caller cannot
     # bypass the poison gate by claiming trusted origin.
@@ -372,11 +401,13 @@ async def add_untrusted_memory(
 @app.get("/api/memories/{memory_id}/lineage")
 async def memory_lineage(
     memory_id: str,
+    request: Request,
+    response: Response,
     tenant: str = settings.default_tenant,
     db: AsyncSession = Depends(get_db),
     x_demo_secret: str = Header(default=""),
 ) -> list[MemoryRecordSchema]:
-    tenant = _resolve_tenant(tenant, x_demo_secret)
+    tenant = _resolve_tenant(tenant, x_demo_secret, request, response)
     try:
         mem_id = UUID(memory_id)
     except ValueError:
@@ -509,17 +540,17 @@ async def accumulation(
 @app.post("/api/demo/setup")
 async def setup_production_demo(
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """Seed the default tenant with the cart-service production demo history.
+    """Seed the caller's demo tenant with the cart-service production demo history.
 
-    This is a destructive reset: it clears all memories and runs for the default
-    tenant and re-creates the canonical old/superseded, new/active, and poison/
-    quarantined records. It is rate-limited to prevent abuse.
+    Each public visitor gets an isolated demo tenant via a cookie, so one visitor
+    cannot reset another's demo state. The endpoint is rate-limited per IP.
     """
     if not _write_limiter.allow(_client_ip(request)):
         raise HTTPException(status_code=429, detail="Too many setup requests. Please wait a minute.")
-    tenant = settings.default_tenant
+    tenant = _public_tenant(request, response)
     old, new, poison, alert = await seed_cart_service_history(db, tenant)
     return {
         "status": "seeded",

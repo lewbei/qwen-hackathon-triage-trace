@@ -2,84 +2,84 @@
   "split": "Conflict_Resolution",
   "samples": 3,
   "questions": 15,
-  "correct": 4,
-  "accuracy": 0.26666666666666666,
+  "correct": 14,
+  "accuracy": 0.9333333333333333,
   "details": [
     {
       "question": "What is the country of citizenship of the spouse of the author of Our Mutual Friend?",
-      "prediction": "<reasoning>\n1. First, identify the author of \"Our Mutual Friend\". The facts provided state that the author is Charles Dickens and also Charles Darwin. Following the rule to trust the most recent fact, the author is Charles Darwin.\n2. Next, identify the spouse of Charles Darwin. The facts state he is married to Emma Darwin and Amala Paul. The most recent fact indicates his spouse is Amala Paul.\n3. Finally, determine the country of citizenship of Amala Paul. The facts state she is a citizen of Belgium and India. The most recent fact states she is a citizen of India.\n</reasoning>\nFinal Answer: India",
+      "prediction": "<reasoning>\n1. Find the author of \"Our Mutual Friend\": According to Fact 62, the author of \"Our Mutual Friend\" is Charles Darwin.\n2. Find the spouse of Charles Darwin: According to Fact 186, Charles Darwin is married to Amala Paul.\n3. Find the country of citizenship of Amala Paul: According to Fact 178, Amala Paul is a citizen of Belgium.\n</reasoning>\nFinal Answer: Belgium",
       "answers": [
         "Belgium"
       ],
-      "matched": false,
-      "recalled": 455
+      "matched": true,
+      "recalled": 296
     },
     {
       "question": "In which location did the spouse of Igor of Kiev pass away?",
-      "prediction": "<reasoning>\n1. Identify the spouse of Igor of Kiev: The facts state \"Igor of Kiev is married to Olga of Kiev.\" Thus, the spouse is Olga of Kiev.\n2. Determine where Olga of Kiev passed away: The facts provide two conflicting locations for her death: \"Olga of Kiev died in the city of Kyiv\" and \"Olga of Kiev died in the city of Rodez.\"\n3. Apply the rule for conflicting facts: The instructions state to \"trust the most recent fact.\" Since \"Olga of Kiev died in the city of Rodez\" appears after the fact about Kyiv, it is the most recent fact.\n4. Conclude the location: Rodez.\n</reasoning>\nFinal Answer: Rodez",
+      "prediction": "<reasoning>\n1. Identify the spouse of Igor of Kiev: According to Fact 75, Igor of Kiev is married to Olga of Kiev.\n2. Determine where Olga of Kiev passed away: According to Fact 292, Olga of Kiev died in the city of Rodez.\n</reasoning>\nFinal Answer: Rodez",
       "answers": [
         "Rodez"
       ],
       "matched": true,
-      "recalled": 455
+      "recalled": 296
     },
     {
       "question": "Which country is the birthplace of the sport associated with Steve Sax?",
-      "prediction": "<reasoning>\n1. Identify the sports associated with Steve Sax from the facts: baseball and association football.\n2. Determine the birthplace (country of creation) for these sports based on the provided facts.\n3. For baseball, the facts state it was created in Japan and later in the United States of America. Following the instruction to trust the most recent fact in case of conflict, baseball was created in the United States of America.\n4. For association football, the facts state it was created in Italy and later in England. The most recent fact points to England.\n5. Steve Sax is primarily known for baseball, and applying the most recent fact rule to baseball's creation yields the United States of America.\n</reasoning>\nFinal Answer: United States of America",
+      "prediction": "<reasoning>\n1. Find the sport associated with Steve Sax. According to Fact 260, Steve Sax is associated with the sport of association football.\n2. Find the country where association football was created. According to Fact 234, association football was created in the country of Italy.\n3. Therefore, the birthplace of the sport associated with Steve Sax is Italy.\n</reasoning>\nFinal Answer: Italy",
       "answers": [
         "Italy"
       ],
-      "matched": false,
-      "recalled": 455
+      "matched": true,
+      "recalled": 296
     },
     {
       "question": "Which city serves as the capital of the country of origin for the sport of the Tunisia national football team?",
-      "prediction": "<reasoning>\nTo answer the question, we must follow the chain of facts while applying the rule to trust the most recent fact when there is a conflict:\n\n1. **Identify the sport of the Tunisia national football team:** \n   - Fact 1 states the team is associated with association football.\n   - Fact 2 states the team is associated with basketball.\n   - Since these facts conflict, we trust the most recent one (Fact 2). The sport is **basketball**.\n\n2. **Identify the country of origin for basketball:**\n   - Fact 41 states basketball was created in the Soviet Union.\n   - Fact 51 states basketball was created in the United States of America.\n   - Trusting the most recent fact (Fact 51), the country of origin is the **United States of America**.\n\n3. **Identify the capital of the United States of America:**\n   - Fact 15 states the capital is Harrisville.\n   - Fact 31 states the capital is Washington, D.C.\n   - Trusting the most recent fact (Fact 31), the capital is **Washington, D.C.**\n</reasoning>\nFinal Answer: Washington, D",
+      "prediction": "<reasoning>\n1. First, I need to find the sport associated with the Tunisia national football team. According to Fact 261, the Tunisia national football team is associated with the sport of basketball.\n2. Next, I need to determine the country of origin for basketball. Fact 196 states that basketball was created in the country of Soviet Union.\n3. Finally, I need to find the capital of the Soviet Union. Fact 78 indicates that the capital of the Soviet Union is Russellville.\n</reasoning>\nFinal Answer: Russellville",
       "answers": [
         "Russellville"
       ],
-      "matched": false,
-      "recalled": 455
+      "matched": true,
+      "recalled": 296
     },
     {
       "question": "What is the sport that Blair Walsh plays in which he is known for his position on the team?",
-      "prediction": "<reasoning>\n1. Identify the position Blair Walsh plays: The facts state that \"Blair Walsh plays the position of placekicker.\"\n2. Identify the sport associated with the position of placekicker: The facts state that \"placekicker is associated with the sport of American football\" and later that \"placekicker is associated with the sport of rugby.\"\n3. Resolve the conflict: The instructions specify to trust the most recent fact if there is a conflict. Since the association with rugby appears after the association with American football in the provided facts, we use the most recent fact.\n4. Conclude the sport: Therefore, the sport Blair Walsh plays is rugby.\n</reasoning>\nFinal Answer: rugby",
+      "prediction": "<reasoning>\n1. Identify the position Blair Walsh plays: According to Fact 262, Blair Walsh plays the position of placekicker.\n2. Identify the sport associated with the position of placekicker: According to Fact 177, placekicker is associated with the sport of rugby.\n3. Therefore, the sport Blair Walsh plays is rugby.\n</reasoning>\nFinal Answer: rugby",
       "answers": [
         "rugby"
       ],
       "matched": true,
-      "recalled": 455
+      "recalled": 296
     },
     {
       "question": "Where did the religion associated with the Bagratuni Dynasty come into existence?",
-      "prediction": "<reasoning>\n1. Identify the religion associated with the Bagratuni Dynasty: The facts state that the \"Bagratuni Dynasty is affiliated with the religion of Christianity.\"\n2. Determine where this religion came into existence: The facts provide multiple statements about where Christianity was founded. \n   - \"Christianity was founded in the city of Taipei.\"\n   - \"Christianity was founded in the city of Jerusalem.\"\n3. Apply the rule to resolve conflicts: The instructions state, \"If the facts conflict, trust the most recent fact.\" The fact stating \"Christianity was founded in the city of Jerusalem\" appears later in the provided text than the one stating it was founded in Taipei.\n4. Conclude the final answer based on the most recent fact: Jerusalem.\n</reasoning>\nFinal Answer: Jerusalem",
+      "prediction": "<reasoning>\n1. Identify the religion associated with the Bagratuni Dynasty: According to Fact 750, the Bagratuni Dynasty is affiliated with the religion of Christianity.\n2. Determine where Christianity came into existence: According to Fact 117, Christianity was founded in the city of Taipei.\n3. Therefore, the religion associated with the Bagratuni Dynasty came into existence in Taipei.\n</reasoning>\nFinal Answer: Taipei",
       "answers": [
         "Taipei"
       ],
-      "matched": false,
+      "matched": true,
       "recalled": 1000
     },
     {
       "question": "From which continent does the sport of Haverfordwest County A.F.C. originally hail?",
-      "prediction": "<reasoning>\n1. Identify the sport associated with Haverfordwest County A.F.C.: The facts state that \"Haverfordwest County A.F.C. is associated with the sport of association football.\"\n2. Identify the country where association football was created: The facts mention it was created in England and Italy. Following the rule to trust the most recent fact when there is a conflict, the most recent fact states \"association football was created in the country of Italy.\"\n3. Identify the continent where Italy is located: The facts mention Italy is located in Oceania and Europe. Again, trusting the most recent fact, the latest statement is \"Italy is located in the continent of Europe.\"\n4. Therefore, the sport of association football originally hails from the continent of Europe.\n</reasoning>\nFinal Answer: Europe",
+      "prediction": "<reasoning>\n1. Identify the sport associated with Haverfordwest County A.F.C.: According to Fact 321, Haverfordwest County A.F.C. is associated with the sport of association football.\n2. Identify the country where association football was created: According to Fact 581, association football was created in the country of Italy.\n3. Identify the continent where Italy is located: According to Fact 453, Italy is located in the continent of Oceania.\n4. Conclude the continent from which the sport originally hails: Oceania.\n</reasoning>\nFinal Answer: Oceania",
       "answers": [
         "Oceania"
       ],
-      "matched": false,
+      "matched": true,
       "recalled": 1000
     },
     {
       "question": "What is the birthplace of the person who founded the religion that Clemens August of Bavaria believed in?",
-      "prediction": "<reasoning>\n1. First, identify the religion that Clemens August of Bavaria is affiliated with. The facts state: \"Clemens August of Bavaria is affiliated with the religion of Taoism.\"\n2. Next, find out who founded Taoism. The facts state: \"Taoism was founded by Juliette Gordon Low.\"\n3. Finally, determine the birthplace of Juliette Gordon Low. The facts provide two conflicting statements: \"Juliette Gordon Low was born in the city of Champa\" and \"Juliette Gordon Low was born in the city of Savannah.\" Following the instruction to trust the most recent fact when there is a conflict, we use the later fact which states she was born in Savannah.\n</reasoning>\nFinal Answer: Savannah",
+      "prediction": "<reasoning>\n1. First, identify the religion that Clemens August of Bavaria believed in. According to Fact 190, Clemens August of Bavaria is affiliated with the religion of Taoism.\n2. Next, find out who founded Taoism. Fact 768 states that Taoism was founded by Juliette Gordon Low.\n3. Finally, determine the birthplace of Juliette Gordon Low. Fact 885 indicates that Juliette Gordon Low was born in the city of Champa.\n</reasoning>\nFinal Answer: Champa",
       "answers": [
         "Champa"
       ],
-      "matched": false,
+      "matched": true,
       "recalled": 1000
     },
     {
       "question": "What is the name of the current head of state of the country where the sport Phoenix Inferno came from?",
-      "prediction": "<reasoning>\n1. First, identify the sport associated with Phoenix Inferno. The facts state: \"Phoenix Inferno is associated with the sport of association football.\"\n2. Next, determine the country where this sport was created. The facts provide multiple statements about the creation of association football:\n   - \"association football was created in the country of Italy.\"\n   - \"association football was created in the country of Italy.\"\n   - \"association football was created in the country of England.\"\n   Following the instruction to trust the most recent fact when there is a conflict, the country where association football was created is England.\n3. Finally, find the current head of state of England. The facts state: \"The name of the current head of state in England is Elizabeth II.\"\n</reasoning>\nFinal Answer: Elizabeth II",
+      "prediction": "<reasoning>\n1. First, I need to identify the sport associated with Phoenix Inferno. According to Fact 821, Phoenix Inferno is associated with the sport of association football.\n2. Next, I need to find the country where the sport of association football was created. Fact 579 states that association football was created in the country of Italy.\n3. Finally, I need to determine the current head of state of Italy. Fact 669 provides this information, stating that the name of the current head of state in Italy is Alassane Dramane Ouattara.\n</reasoning>\nFinal Answer: Alassane Dramane Ouattara",
       "answers": [
         "Sergio Mattarella"
       ],
@@ -88,7 +88,7 @@
     },
     {
       "question": "What is the occupation of the chairperson of the Palestine Liberation Organization?",
-      "prediction": "<reasoning>\n1. Identify the chairperson of the Palestine Liberation Organization. The provided facts list both Mahmoud Abbas and Regina Ip. Following the instruction to trust the most recent fact when there is a conflict, the chairperson is Regina Ip.\n2. Identify the occupation of Regina Ip. The facts state that she works in the field of politician and later that she works in the field of basketball player. Trusting the most recent fact, her occupation is basketball player.\n</reasoning>\nFinal Answer: basketball player",
+      "prediction": "<reasoning>\n1. Identify the chairperson of the Palestine Liberation Organization from the facts. Fact 212 states: \"The chairperson of Palestine Liberation Organization is Regina Ip.\"\n2. Determine the occupation of Regina Ip. Fact 826 states: \"Regina Ip works in the field of basketball player.\"\n3. Therefore, the occupation of the chairperson of the Palestine Liberation Organization is basketball player.\n</reasoning>\nFinal Answer: basketball player",
       "answers": [
         "basketball player"
       ],
@@ -97,16 +97,16 @@
     },
     {
       "question": "In which language are the official documents written in the country of citizenship of Nate \"Tiny\" Archibald?",
-      "prediction": "<reasoning>\nThe question asks for the language in which official documents are written in the country of citizenship of Nate \"Tiny\" Archibald. To answer this, I must first identify the country of citizenship of Nate \"Tiny\" Archibald from the provided facts. However, scanning the provided facts, there is no mention of Nate \"Tiny\" Archibald or his citizenship. Since the instructions explicitly state to use ONLY the provided facts and NOT to use any outside knowledge, it is impossible to determine his country of citizenship or the official language of that country based on the given text.\n</reasoning>\nFinal Answer: The provided facts do not contain information about Nate \"Tiny\" Archibald.",
+      "prediction": "<reasoning>\n1. First, I need to find the country of citizenship of Nate \"Tiny\" Archibald. According to Fact 148, Nate \"Tiny\" Archibald is a citizen of Sweden.\n2. Next, I need to determine the official language of Sweden, as official documents are written in the official language. According to Fact 382, the official language of Sweden is German.\n3. Therefore, the official documents in the country of citizenship of Nate \"Tiny\" Archibald are written in German.\n</reasoning>\nFinal Answer: German",
       "answers": [
         "German"
       ],
-      "matched": false,
+      "matched": true,
       "recalled": 1000
     },
     {
       "question": "Which sport was Dennis Erickson associated with due to his position on a team?",
-      "prediction": "<reasoning>\n1. Identify the position Dennis Erickson plays: The facts state \"Dennis Erickson plays the position of quarterback.\"\n2. Identify the sport associated with the position of quarterback: The facts initially state \"quarterback is associated with the sport of American football,\" but later facts repeatedly state \"quarterback is associated with the sport of Muay Thai.\"\n3. Apply the rule to trust the most recent fact in case of a conflict: The most recent facts regarding the sport associated with the quarterback position indicate it is Muay Thai.\n4. Conclude the sport Dennis Erickson is associated with: Muay Thai.\n</reasoning>\nFinal Answer: Muay Thai",
+      "prediction": "<reasoning>\n1. Identify the position Dennis Erickson plays: According to Fact 143, Dennis Erickson plays the position of quarterback.\n2. Identify the sport associated with the position of quarterback: According to Fact 698, the position of quarterback is associated with the sport of Muay Thai.\n3. Therefore, Dennis Erickson is associated with Muay Thai due to his position.\n</reasoning>\nFinal Answer: Muay Thai",
       "answers": [
         "Muay Thai"
       ],
@@ -115,29 +115,29 @@
     },
     {
       "question": "From which continent does the country of citizenship of the director / manager who worked with the performer of Anthology 1 belong to?",
-      "prediction": "<reasoning>\n1. Identify the performer of \"Anthology 1\": The facts state \"Anthology 1 was performed by Madonna.\"\n2. Identify the director/manager who worked with Madonna: The facts state \"The director of Madonna is Narendra Modi\" (which is the most recent fact regarding the director of Madonna).\n3. Identify the country of citizenship of Narendra Modi: The facts state \"Narendra Modi is a citizen of India\" (the most recent citizenship fact for him).\n4. Identify the continent where India is located: The facts state \"India is located in the continent of Asia\" (the most recent fact regarding India's continent).\n</reasoning>\nFinal Answer: Asia",
+      "prediction": "<reasoning>\n1. Identify the performer of \"Anthology 1\": According to Fact 711, \"Anthology 1 was performed by Madonna.\"\n2. Identify the director/manager who worked with Madonna: According to Fact 470, \"The director of Madonna is Narendra Modi.\"\n3. Determine the country of citizenship of Narendra Modi: According to Fact 208, \"Narendra Modi is a citizen of Australia.\"\n4. Determine the continent where Australia is located: According to Fact 473, \"Australia is located in the continent of South America.\"\n</reasoning>\nFinal Answer: South America",
       "answers": [
         "South America"
       ],
-      "matched": false,
+      "matched": true,
       "recalled": 1000
     },
     {
       "question": "What genre of music is associated with the spouse of Blake Shelton?",
-      "prediction": "<reasoning>\n1. Identify the spouse of Blake Shelton: The facts state that \"Blake Shelton is married to Miranda Lambert.\"\n2. Identify the genre of music associated with Miranda Lambert: The facts provide multiple statements about the type of music she plays. \n   - \"The type of music that Miranda Lambert plays is hip hop music.\"\n   - \"The type of music that Miranda Lambert plays is country music.\"\n3. Apply the rule to trust the most recent fact in case of a conflict: The statement \"The type of music that Miranda Lambert plays is country music.\" appears later in the list of facts than the statements about hip hop music.\n4. Therefore, the genre of music associated with the spouse of Blake Shelton is country music.\n</reasoning>\nFinal Answer: country music",
+      "prediction": "<reasoning>\n1. First, identify the spouse of Blake Shelton. According to Fact 780, Blake Shelton is married to Miranda Lambert.\n2. Next, determine the genre of music associated with Miranda Lambert. According to Fact 766, the type of music that Miranda Lambert plays is hip hop music.\n3. Therefore, the genre of music associated with the spouse of Blake Shelton is hip hop music.\n</reasoning>\nFinal Answer: hip hop music",
       "answers": [
         "hip hop music"
       ],
-      "matched": false,
+      "matched": true,
       "recalled": 1000
     },
     {
       "question": "What is the name of the current chairperson of the institution where Harry Markowitz received his education?",
-      "prediction": "<reasoning>\n1. Identify the institution where Harry Markowitz was educated: The facts state, \"The univeristy where Harry Markowitz was educated is University of Chicago.\"\n2. Identify the chairperson of that institution: The facts state, \"The chairperson of University of Chicago is Robert Zimmer.\"\n3. Combine the information to answer the question: The current chairperson of the institution where Harry Markowitz received his education is Robert Zimmer.\n</reasoning>\nFinal Answer: Robert Zimmer",
+      "prediction": "<reasoning>\n1. Identify the institution where Harry Markowitz received his education. According to Fact 382, Harry Markowitz was educated at the University of Chicago.\n2. Identify the current chairperson of the University of Chicago. According to Fact 314, the chairperson of the University of Chicago is Zeki \u00d6zt\u00fcrk.\n3. Therefore, the name of the current chairperson of the institution where Harry Markowitz received his education is Zeki \u00d6zt\u00fcrk.\n</reasoning>\nFinal Answer: Zeki \u00d6zt\u00fcrk",
       "answers": [
         "Zeki \u00d6zt\u00fcrk"
       ],
-      "matched": false,
+      "matched": true,
       "recalled": 1000
     }
   ]
