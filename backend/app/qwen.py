@@ -102,11 +102,29 @@ class QwenGateway:
 
     async def embed(self, texts: list[str], dimensions: int = 1536) -> list[list[float]]:
         self._ensure_key()
-        response = await self.embedding_client.embeddings.create(
-            input=texts,
-            model=settings.qwen_embedding_model,
-            dimensions=dimensions,
-        )
+        from openai import APIError
+
+        try:
+            response = await self.embedding_client.embeddings.create(
+                input=texts,
+                model=settings.qwen_embedding_model,
+                dimensions=dimensions,
+            )
+        except APIError as exc:
+            # Fall back to v3 if the primary embedding model is unavailable.
+            msg = str(exc).lower()
+            if (
+                exc.code in ("model_not_found", "invalid_model")
+                or "model" in msg
+                and ("not found" in msg or "not supported" in msg or "does not exist" in msg)
+            ):
+                response = await self.embedding_client.embeddings.create(
+                    input=texts,
+                    model=settings.qwen_embedding_fallback_model,
+                    dimensions=dimensions,
+                )
+            else:
+                raise
         return [item.embedding for item in response.data]
 
     async def rerank(

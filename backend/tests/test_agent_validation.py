@@ -445,3 +445,35 @@ async def test_alert_service_and_symptom_are_redacted(db_session, monkeypatch):
     assert "super-secret" not in prompt_text
     assert "leaked" not in prompt_text
     assert "abc123" not in prompt_text
+
+
+@pytest.mark.asyncio
+async def test_embed_falls_back_to_v3_when_v4_unavailable():
+    """If the configured embedding model is unavailable, qwen.embed retries with the fallback model."""
+    from openai import APIError
+
+    from backend.app.config import settings
+    from backend.app.qwen import qwen
+
+    calls: list[dict[str, Any]] = []
+
+    async def _fake_create(*, input, model, dimensions, **kwargs):
+        calls.append({"model": model, "input": input, "dimensions": dimensions})
+        if model == settings.qwen_embedding_model:
+            err = APIError("The model text-embedding-v4 is not found.")
+            err.code = "model_not_found"
+            raise err
+        return type("Resp", (), {"data": [type("Item", (), {"embedding": [0.1] * dimensions})()]})()
+
+    qwen._ensure_key()
+    original = qwen.embedding_client.embeddings.create
+    qwen.embedding_client.embeddings.create = _fake_create
+    try:
+        result = await qwen.embed(["test"], dimensions=1536)
+    finally:
+        qwen.embedding_client.embeddings.create = original
+
+    assert len(calls) == 2
+    assert calls[0]["model"] == settings.qwen_embedding_model
+    assert calls[1]["model"] == settings.qwen_embedding_fallback_model
+    assert result == [[0.1] * 1536]

@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     qwen_reasoning_model: str = "qwen3.7-plus"
     qwen_extraction_model: str = "qwen3.6-flash"
     qwen_embedding_model: str = "text-embedding-v4"
+    qwen_embedding_fallback_model: str = "text-embedding-v3"
     qwen_rerank_model: str = "qwen3-rerank"
     qwen_rerank_url: str = "https://dashscope-intl.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank"
 
