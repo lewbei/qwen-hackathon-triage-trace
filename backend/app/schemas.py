@@ -34,6 +34,7 @@ class ActionProposal(BaseModel):
     status: str = "pending"
     recalled_memory_ids: list[str] = []
     insufficient_evidence: bool = False
+    error: str | None = None
 
 
 class RunEvent(BaseModel):
@@ -55,6 +56,7 @@ class RunOut(BaseModel):
     proposal: ActionProposal | None = None
     status: str = "running"
     decision: dict[str, Any] | None = None
+    error: str | None = None
 
 
 class RunRecord(BaseModel):

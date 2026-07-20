@@ -7,6 +7,7 @@ from httpx import ASGITransport, AsyncClient
 
 from backend.app.main import app
 from backend.app.models import MemoryRecord
+from backend.tests.conftest import TEST_DEMO_SECRET
 
 
 async def _fake_qwen_chat(*, messages, tools=None, tool_choice=None, temperature=0.2, max_tokens=1024, **kwargs):
@@ -53,11 +54,16 @@ async def test_approved_simulated_safe_run_creates_memory(db_session):
                     "symptom": "High error rate",
                     "context": "Redis spike",
                 },
+                headers={"x-demo-secret": TEST_DEMO_SECRET},
             )
     assert run_res.status_code == 200
     run_id = run_res.json()["id"]
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        decision = await client.post(f"/api/proposals/{run_id}/decision", json={"approved": True, "feedback": "Worked"})
+        decision = await client.post(
+            f"/api/proposals/{run_id}/decision",
+            json={"approved": True, "feedback": "Worked"},
+            headers={"x-demo-secret": TEST_DEMO_SECRET},
+        )
     assert decision.status_code == 200
     data = decision.json()
     assert data["status"] == "simulated_safe"
@@ -113,11 +119,16 @@ async def test_approved_run_rejected_by_bad_simulation(db_session):
                     "symptom": "High error rate",
                     "context": "Redis spike",
                 },
+                headers={"x-demo-secret": TEST_DEMO_SECRET},
             )
     assert run_res.status_code == 200
     run_id = run_res.json()["id"]
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        decision = await client.post(f"/api/proposals/{run_id}/decision", json={"approved": True, "feedback": "try it"})
+        decision = await client.post(
+            f"/api/proposals/{run_id}/decision",
+            json={"approved": True, "feedback": "try it"},
+            headers={"x-demo-secret": TEST_DEMO_SECRET},
+        )
     assert decision.status_code == 200
     data = decision.json()
     assert data["status"] == "rejected_by_simulation"

@@ -5,6 +5,8 @@ import pytest_asyncio
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from backend.app import main as main_module
+from backend.app.config import settings
 from backend.app.main import app
 from backend.app.models import Base, MemoryRecord, get_db
 from backend.app.qwen import qwen
@@ -13,6 +15,8 @@ TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL",
     "postgresql+asyncpg://postgres:postgres@localhost:5432/triagetrace",
 )
+
+TEST_DEMO_SECRET = "test-secret"
 
 
 def _make_session_maker():
@@ -53,3 +57,21 @@ def mock_qwen_embed(monkeypatch):
         return [[0.0] * dimensions for _ in texts]
 
     monkeypatch.setattr(qwen, "embed", _fake_embed)
+
+
+@pytest.fixture(autouse=True)
+def disable_demo_rate_limiters(monkeypatch):
+    """Rate limits are for production, not unit tests."""
+
+    class _NoopLimiter:
+        def allow(self, ip: str) -> bool:
+            return True
+
+    monkeypatch.setattr(main_module, "_write_limiter", _NoopLimiter())
+    monkeypatch.setattr(main_module, "_read_limiter", _NoopLimiter())
+
+
+@pytest.fixture(autouse=True)
+def set_demo_secret(monkeypatch):
+    """Use a predictable demo secret so tests can exercise authenticated paths."""
+    monkeypatch.setattr(settings, "demo_secret", TEST_DEMO_SECRET)

@@ -87,3 +87,40 @@ async def test_retrieve_and_pack_selects_current_memory_rejects_stale_and_poison
     assert poison.id in rejected_ids, "quarantined poison memory should be in rejected audit set"
     assert meta["packed"] >= 1
     assert meta["rejected"] >= 2
+
+
+@pytest.mark.asyncio
+async def test_retrieve_and_pack_uses_cosine_fallback_when_reranker_fails(db_session):
+    """If the Qwen reranker raises, the pipeline must fall back to cosine similarity."""
+    from unittest.mock import AsyncMock, patch
+
+    tenant = "test-rerank-fallback"
+    scope = "fallback-service"
+
+    target = await create_memory(
+        db_session,
+        tenant=tenant,
+        provenance="simulation",
+        type="procedure",
+        scope=scope,
+        subject="latency_spike",
+        predicate="remediation",
+        content="Scale the fallback workers horizontally.",
+        source_authority=80,
+        embedding=[1.0] * 1536,
+        auto_embed=False,
+    )
+
+    with patch("backend.app.memory.qwen.rerank", new_callable=AsyncMock) as mock_rerank:
+        mock_rerank.side_effect = RuntimeError("reranker unavailable")
+        packed, omitted, rejected, meta = await retrieve_and_pack(
+            db_session,
+            tenant=tenant,
+            scope=scope,
+            query_text="scale workers",
+            query_embedding=[1.0] * 1536,
+            budget=800,
+        )
+
+    assert meta["packed"] >= 1
+    assert any(m.id == target.id for m in packed), "cosine fallback should recall the target memory"

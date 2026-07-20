@@ -69,6 +69,108 @@ def _safe_parse_json(text: str) -> dict[str, Any]:
     return {"_raw": text}
 
 
+def _validate_proposal_fields(parsed: dict[str, Any], default_service: str) -> tuple[bool, list[str]]:
+    """Validate the parsed ActionProposal fields. Returns (valid, errors)."""
+    errors: list[str] = []
+
+    if not isinstance(parsed, dict) or parsed.get("_raw"):
+        return False, ["proposal is not a valid JSON object"]
+
+    action = str(parsed.get("action", "")).strip()
+    insufficient = parsed.get("insufficient_evidence")
+    if isinstance(insufficient, str):
+        insufficient = insufficient.lower() in ("true", "yes", "1")
+    elif not isinstance(insufficient, bool):
+        insufficient = bool(insufficient)
+    parsed["insufficient_evidence"] = insufficient
+
+    if not action:
+        errors.append("action is empty")
+    elif action.lower() == "none":
+        if not insufficient:
+            errors.append("action is 'none' but insufficient_evidence is false")
+    else:
+        if insufficient:
+            errors.append("insufficient_evidence is true but action is not 'none'")
+
+    service = str(parsed.get("service", "")).strip()
+    if not service:
+        errors.append("service is empty")
+    else:
+        parsed["service"] = service
+
+    evidence = str(parsed.get("evidence", "")).strip()
+    if not evidence:
+        errors.append("evidence is empty")
+    else:
+        parsed["evidence"] = evidence
+
+    risk = str(parsed.get("risk", "")).strip().lower()
+    if risk not in {"low", "medium", "high"}:
+        errors.append(f"risk must be one of low/medium/high, got {parsed.get('risk')!r}")
+    else:
+        parsed["risk"] = risk
+
+    approval = parsed.get("approval_required")
+    if isinstance(approval, str):
+        approval = approval.lower() in ("true", "yes", "1")
+    elif not isinstance(approval, bool):
+        approval = bool(approval)
+    parsed["approval_required"] = approval
+    if not approval:
+        errors.append("approval_required must be true for every remediation proposal")
+
+    # risk/approval defaults are acceptable fallbacks, but the above already forces them.
+    parsed.setdefault("service", default_service)
+    parsed.setdefault("evidence", "No evidence provided.")
+    parsed.setdefault("risk", "medium")
+    parsed.setdefault("approval_required", True)
+
+    return len(errors) == 0, errors
+
+
+def _parse_proposal(text: str, default_service: str) -> ActionProposal:
+    """Parse and validate a model-generated ActionProposal.
+
+    Returns an ActionProposal. If validation fails, the returned proposal has
+    status="invalid" and error set; it never silently fabricates a remediation.
+    """
+    raw_text = text or ""
+    parsed = _safe_parse_json(raw_text)
+    valid, errors = _validate_proposal_fields(parsed, default_service)
+    status = "pending" if valid else "invalid"
+    error = "; ".join(errors) if errors else None
+
+    if valid:
+        return ActionProposal(
+            action=parsed["action"],
+            service=parsed["service"],
+            evidence=parsed["evidence"],
+            risk=parsed["risk"],
+            approval_required=parsed["approval_required"],
+            status=status,
+            recalled_memory_ids=parsed.get("recalled_memory_ids", []),
+            insufficient_evidence=parsed["insufficient_evidence"],
+            error=error,
+        )
+
+    # Invalid: build a safe, explicit placeholder so callers can show the error and a retry button.
+    action = str(parsed.get("action", "")).strip() or "none"
+    service = str(parsed.get("service", "")).strip() or default_service
+    evidence = str(parsed.get("evidence", "")).strip() or error or "Proposal validation failed."
+    return ActionProposal(
+        action=action,
+        service=service,
+        evidence=evidence,
+        risk=str(parsed.get("risk", "")).strip().lower() if parsed.get("risk") else "medium",
+        approval_required=True,
+        status="invalid",
+        recalled_memory_ids=parsed.get("recalled_memory_ids", []),
+        insufficient_evidence=bool(parsed.get("insufficient_evidence", True)),
+        error=error,
+    )
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -100,7 +202,7 @@ def _maybe_enqueue(queue: asyncio.Queue | None, event: RunEvent) -> None:
             pass
 
 
-async def run_incident(
+async def _run_incident_unsafe(
     db: AsyncSession,
     alert: Alert,
     mode: Mode,
@@ -222,55 +324,12 @@ async def run_incident(
         "content": (
             "Now produce a final JSON ActionProposal. "
             "You must include these exact fields: action (string), service (string), evidence (string), risk (low/medium/high), approval_required (boolean), insufficient_evidence (boolean). "
-            "If insufficient evidence, set action to 'none' and insufficient_evidence to true."
+            "If insufficient evidence, set action to 'none' and insufficient_evidence to true. "
+            "Do not wrap the JSON in markdown fences."
         ),
     })
 
-    second = await qwen.chat(messages=messages, temperature=0.0, max_tokens=2048)
-    emit(
-        "model.proposal",
-        {"content": second.get("content")},
-        model=second.get("model"),
-        token_usage=second.get("token_usage"),
-        latency_ms=second.get("latency_ms"),
-    )
-
-    proposal_text = second.get("content") or "{}"
-    if proposal_text.startswith("```"):
-        proposal_text = proposal_text.split("```", 2)[-2] if proposal_text.count("```") >= 2 else proposal_text.strip("`")
-    try:
-        parsed = json.loads(proposal_text)
-    except json.JSONDecodeError:
-        start = proposal_text.find("{")
-        end = proposal_text.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            parsed = json.loads(proposal_text[start : end + 1])
-        else:
-            parsed = {
-                "action": "none",
-                "service": alert.service,
-                "evidence": "Model returned unparseable output.",
-                "risk": "low",
-                "approval_required": True,
-                "insufficient_evidence": True,
-            }
-
-    # Ensure required fields exist with sensible defaults.
-    parsed.setdefault("action", "none")
-    parsed.setdefault("service", alert.service)
-    parsed.setdefault("evidence", "No evidence provided.")
-    parsed.setdefault("risk", "medium")
-    parsed.setdefault("approval_required", True)
-    parsed.setdefault("insufficient_evidence", False)
-
-    if parsed.get("insufficient_evidence"):
-        parsed["action"] = "none"
-        parsed["status"] = "insufficient_evidence"
-    else:
-        parsed["status"] = "pending"
-
-    proposal = ActionProposal(**parsed)
-    proposal.recalled_memory_ids = recalled_ids
+    proposal = await _resolve_final_proposal(messages, alert.service, recalled_ids, emit)
 
     result = {
         "id": run_id,
@@ -279,6 +338,104 @@ async def run_incident(
         "alert": alert,
         "events": events,
         "proposal": proposal,
+        "error": proposal.error if proposal and proposal.status == "invalid" else None,
     }
-    emit("run.completed", {"proposal": proposal.model_dump()})
+    emit("run.completed", {"proposal": proposal.model_dump() if proposal else None, "error": result["error"]})
     return result
+
+
+async def run_incident(
+    db: AsyncSession,
+    alert: Alert,
+    mode: Mode,
+    event_queue: asyncio.Queue | None = None,
+) -> dict[str, Any]:
+    """Public wrapper that runs the agent and surfaces any failure as a structured error."""
+    # Always redact before any model call or persistence.
+    alert = alert.model_copy(update={"context": redact(alert.context)})
+
+    try:
+        return await _run_incident_unsafe(db, alert, mode, event_queue)
+    except Exception as exc:
+        run_id = str(uuid.uuid4())
+        events: list[RunEvent] = []
+
+        def emit(event_type: str, payload: dict[str, Any], **kwargs: Any) -> RunEvent:
+            ev = _event(run_id, event_type, payload, **kwargs)
+            events.append(ev)
+            _maybe_enqueue(event_queue, ev)
+            return ev
+
+        emit("run.started", {"mode": mode, "alert": alert.model_dump()})
+        emit("run.error", {"error": str(exc)})
+        emit("run.completed", {"proposal": None, "error": str(exc)})
+        return {
+            "id": run_id,
+            "tenant": alert.tenant,
+            "mode": mode,
+            "alert": alert,
+            "events": events,
+            "proposal": None,
+            "error": str(exc),
+        }
+
+
+async def _resolve_final_proposal(
+    messages: list[dict[str, Any]],
+    service: str,
+    recalled_ids: list[str],
+    emit,
+) -> ActionProposal:
+    """Ask the model for a final ActionProposal, validate it, and retry once if invalid."""
+    second = await qwen.chat(messages=messages, temperature=0.0, max_tokens=2048)
+    emit(
+        "model.proposal",
+        {"content": second.get("content"), "validation": "pending"},
+        model=second.get("model"),
+        token_usage=second.get("token_usage"),
+        latency_ms=second.get("latency_ms"),
+    )
+
+    proposal = _parse_proposal(second.get("content") or "", service)
+    if proposal.status != "invalid":
+        proposal.recalled_memory_ids = recalled_ids
+        return proposal
+
+    emit(
+        "model.proposal.invalid",
+        {"error": proposal.error, "content": second.get("content")},
+    )
+
+    correction = (
+        "Your previous response failed validation with the following errors:\n"
+        f"{proposal.error}\n\n"
+        "Return a corrected JSON ActionProposal with exactly these fields and types: "
+        "action (string), service (string), evidence (string), risk (one of low/medium/high), "
+        "approval_required (boolean), insufficient_evidence (boolean). "
+        "If evidence is insufficient, set action to 'none' and insufficient_evidence to true. "
+        "Otherwise action must be a non-empty remediation. Do not wrap the JSON in markdown."
+    )
+    retry_messages = list(messages)
+    retry_messages.append({"role": "assistant", "content": second.get("content") or ""})
+    retry_messages.append({"role": "user", "content": correction})
+
+    retry = await qwen.chat(messages=retry_messages, temperature=0.0, max_tokens=2048)
+    emit(
+        "model.proposal.retry",
+        {
+            "content": retry.get("content"),
+            "previous_error": proposal.error,
+        },
+        model=retry.get("model"),
+        token_usage=retry.get("token_usage"),
+        latency_ms=retry.get("latency_ms"),
+    )
+
+    proposal = _parse_proposal(retry.get("content") or "", service)
+    if proposal.status == "invalid":
+        emit(
+            "model.proposal.retry_failed",
+            {"error": proposal.error, "content": retry.get("content")},
+        )
+    proposal.recalled_memory_ids = recalled_ids
+    return proposal

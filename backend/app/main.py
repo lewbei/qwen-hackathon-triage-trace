@@ -161,14 +161,22 @@ async def start_run(
         raise HTTPException(status_code=429, detail="Too many demo requests. Please wait a minute.")
     alert.tenant = _resolve_tenant(alert.tenant, x_demo_secret, request, response)
     run = await run_incident(db, alert, mode)
+    run_error = run.get("error")
+    proposal = run.get("proposal")
+    status = "pending"
+    if proposal and proposal.status == "invalid":
+        status = "invalid"
+        run_error = run_error or proposal.error
+    elif run_error:
+        status = "error"
     record = RunRecord(
         id=UUID(run["id"]),
         tenant=run["tenant"],
         mode=run["mode"],
         alert=run["alert"].model_dump(),
         events=_serialize_events(run["events"]),
-        proposal=run["proposal"].model_dump() if run.get("proposal") else None,
-        status="pending",
+        proposal=proposal.model_dump() if proposal else None,
+        status=status,
     )
     db.add(record)
     await db.commit()
@@ -178,8 +186,9 @@ async def start_run(
         mode=record.mode,
         alert=run["alert"],
         events=run["events"],
-        proposal=run["proposal"],
+        proposal=proposal,
         status=record.status,
+        error=run_error,
     )
 
 
@@ -192,14 +201,22 @@ async def _stream_run(alert: Alert, mode: Mode):
         async with AsyncSessionLocal() as db:
             try:
                 final_result = await run_incident(db, alert, mode, event_queue=queue)
+                run_error = final_result.get("error")
+                proposal = final_result.get("proposal")
+                status = "pending"
+                if proposal and proposal.status == "invalid":
+                    status = "invalid"
+                    run_error = run_error or proposal.error
+                elif run_error:
+                    status = "error"
                 record = RunRecord(
                     id=UUID(final_result["id"]),
                     tenant=final_result["tenant"],
                     mode=final_result["mode"],
                     alert=final_result["alert"].model_dump(),
                     events=_serialize_events(final_result["events"]),
-                    proposal=final_result["proposal"].model_dump() if final_result.get("proposal") else None,
-                    status="pending",
+                    proposal=proposal.model_dump() if proposal else None,
+                    status=status,
                 )
                 db.add(record)
                 await db.commit()
@@ -299,6 +316,8 @@ async def decide(
     demo_tenant = _read_demo_tenant(request)
     if record.tenant != settings.default_tenant and record.tenant != demo_tenant and not _is_authenticated(x_demo_secret):
         raise HTTPException(status_code=404, detail="Proposal not found")
+    if record.status in ("error", "invalid"):
+        raise HTTPException(status_code=400, detail=f"Cannot decide on a run with status {record.status}")
     return await apply_operator_decision(db, record, decision.approved, decision.feedback)
 
 

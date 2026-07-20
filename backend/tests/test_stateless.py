@@ -71,9 +71,9 @@ async def test_stateless_run_creates_proposal():
 
 
 @pytest.mark.asyncio
-async def test_stateless_run_tolerates_missing_action():
+async def test_stateless_run_retries_on_invalid_proposal():
     with patch("backend.app.agent.qwen") as mock_qwen:
-        # First call requests tools; second call returns malformed proposal missing `action`.
+        # First call is tool reasoning, second is an invalid final proposal, third is retry.
         mock_qwen.chat = AsyncMock(side_effect=[
             {
                 "content": None,
@@ -102,6 +102,19 @@ async def test_stateless_run_tolerates_missing_action():
                 "token_usage": {"prompt": 400, "completion": 120, "total": 520},
                 "latency_ms": 900.0,
             },
+            {
+                "content": json.dumps({
+                    "action": "Restart cart-service pods",
+                    "service": "cart-service",
+                    "evidence": "CPU is high and errors are elevated.",
+                    "risk": "medium",
+                    "approval_required": True,
+                    "insufficient_evidence": False,
+                }),
+                "model": "qwen3.7-plus",
+                "token_usage": {"prompt": 400, "completion": 120, "total": 520},
+                "latency_ms": 950.0,
+            },
         ])
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
@@ -115,8 +128,71 @@ async def test_stateless_run_tolerates_missing_action():
             )
     assert response.status_code == 200
     data = response.json()
-    assert data["proposal"]["action"] == "none"
+    assert data["proposal"]["action"] == "Restart cart-service pods"
     assert data["proposal"]["status"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_stateless_run_marks_retry_failed_proposal_invalid():
+    with patch("backend.app.agent.qwen") as mock_qwen:
+        # Tool reasoning then two invalid final proposals (initial + one retry).
+        mock_qwen.chat = AsyncMock(side_effect=[
+            {
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "function": {
+                            "name": "inspect_metrics",
+                            "arguments": json.dumps({"service": "cart-service", "time_window": "1h"}),
+                        },
+                    },
+                ],
+                "model": "qwen3.7-plus",
+                "token_usage": {"prompt": 200, "completion": 80, "total": 280},
+                "latency_ms": 1234.0,
+            },
+            {
+                "content": json.dumps({
+                    "service": "cart-service",
+                    "evidence": "CPU is high.",
+                    "risk": "medium",
+                    "approval_required": True,
+                    "insufficient_evidence": False,
+                }),
+                "model": "qwen3.7-plus",
+                "token_usage": {"prompt": 400, "completion": 120, "total": 520},
+                "latency_ms": 900.0,
+            },
+            {
+                "content": json.dumps({
+                    "action": "",
+                    "service": "cart-service",
+                    "evidence": "Still broken.",
+                    "risk": "medium",
+                    "approval_required": True,
+                    "insufficient_evidence": False,
+                }),
+                "model": "qwen3.7-plus",
+                "token_usage": {"prompt": 400, "completion": 120, "total": 520},
+                "latency_ms": 910.0,
+            },
+        ])
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post(
+                "/api/agent/runs?mode=stateless",
+                json={
+                    "service": "cart-service",
+                    "symptom": "High error rate and slow checkout",
+                    "severity": "critical",
+                    "context": "Started after Redis latency spike",
+                },
+            )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "invalid"
+    assert data["proposal"]["status"] == "invalid"
+    assert "action" in (data["proposal"].get("error") or "").lower()
 
 
 @pytest.mark.asyncio

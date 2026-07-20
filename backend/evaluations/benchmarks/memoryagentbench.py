@@ -125,8 +125,8 @@ def _answer_match(prediction: str, answers: list[str]) -> bool:
 
 async def _run_mab(
     split: str = "Conflict_Resolution",
-    max_samples: int = 3,
-    max_questions_per_sample: int | None = 5,
+    max_samples: int | None = None,
+    max_questions_per_sample: int | None = None,
 ) -> dict[str, Any]:
     from datasets import load_dataset
 
@@ -144,7 +144,7 @@ async def _run_mab(
         ds = load_dataset("ai-hyz/MemoryAgentBench", split=split, streaming=True)
     samples: list[dict[str, Any]] = []
     for i, sample in enumerate(ds):
-        if i >= max_samples:
+        if max_samples is not None and i >= max_samples:
             break
         samples.append(sample)
 
@@ -152,6 +152,8 @@ async def _run_mab(
 
     total = correct = 0
     details: list[dict[str, Any]] = []
+
+    chat_semaphore = asyncio.Semaphore(5)
 
     async with SessionLocal() as session:
         for sample_idx, sample in enumerate(samples):
@@ -192,19 +194,28 @@ async def _run_mab(
 
             questions = sample["questions"]
             answers = sample["answers"]
-            if max_questions_per_sample:
+            if max_questions_per_sample is not None:
                 questions = questions[:max_questions_per_sample]
                 answers = answers[:max_questions_per_sample]
 
-            for q_idx, (q, ans_list) in enumerate(zip(questions, answers)):
-                print(f"[mab] sample {sample_idx + 1} question {q_idx + 1}/{len(questions)}", flush=True)
-                # Embed the question and retrieve active facts in this scope.
-                query_emb = (await qwen.embed([q], dimensions=1536))[0]
+            # Batch-embed all questions for this sample (10 at a time).
+            question_embeddings: list[list[float]] = []
+            for i in range(0, len(questions), 10):
+                chunk = questions[i : i + 10]
+                question_embeddings.extend(await qwen.embed(chunk, dimensions=1536))
+                if i and i % 50 == 0:
+                    print(f"[mab] embedded questions {i}/{len(questions)}", flush=True)
+
+            # Build prompts sequentially (DB lookup), then run LLM calls in parallel.
+            prompts: list[tuple[int, str, list[str]]] = []
+            for q_idx, (q, ans_list, q_emb) in enumerate(zip(questions, answers, question_embeddings)):
+                if q_idx and q_idx % 20 == 0:
+                    print(f"[mab] retrieved question {q_idx}/{len(questions)}", flush=True)
                 memories = await search_memories(
                     session,
                     tenant=tenant,
                     scope=scope,
-                    query_embedding=query_emb,
+                    query_embedding=q_emb,
                     limit=1000,
                 )
                 # Present facts in chronological order so the model can identify the
@@ -224,25 +235,43 @@ async def _run_mab(
                     "Facts:\n" + "\n".join(context_lines) + "\n\n"
                     f"Question: {q}\nAnswer:"
                 )
-                response = await qwen.chat(
-                    messages=[{"role": "user", "content": prompt}],
-                    model=settings.qwen_reasoning_model,
-                    temperature=0.0,
-                    max_tokens=256,
-                )
+                prompts.append((q_idx, prompt, ans_list, len(context_lines)))
+
+            async def _answer(item: tuple[int, str, list[str], int]) -> dict[str, Any]:
+                q_idx, prompt, ans_list, recalled = item
+                async with chat_semaphore:
+                    response = await qwen.chat(
+                        messages=[{"role": "user", "content": prompt}],
+                        model=settings.qwen_reasoning_model,
+                        temperature=0.0,
+                        max_tokens=256,
+                    )
                 prediction = response.get("content") or ""
                 matched = _answer_match(prediction, ans_list)
-                if matched:
-                    correct += 1
-                total += 1
-                details.append({
-                    "question": q,
+                return {
+                    "q_idx": q_idx,
+                    "question": questions[q_idx],
                     "prediction": prediction,
                     "answers": ans_list,
                     "matched": matched,
-                    "recalled": len(context_lines),
+                    "recalled": recalled,
+                }
+
+            sample_results = await asyncio.gather(*[_answer(p) for p in prompts])
+            sample_results.sort(key=lambda r: r["q_idx"])
+            for r in sample_results:
+                details.append({
+                    "question": r["question"],
+                    "prediction": r["prediction"],
+                    "answers": r["answers"],
+                    "matched": r["matched"],
+                    "recalled": r["recalled"],
                 })
-            print(f"[mab] sample {sample_idx + 1} done: {correct}/{total} correct so far", flush=True)
+                if r["matched"]:
+                    correct += 1
+                total += 1
+            print(f"[mab] sample {sample_idx + 1} done: {sum(1 for r in sample_results if r['matched'])}/{len(sample_results)} correct this sample", flush=True)
+            print(f"[mab] running total: {correct}/{total} correct so far", flush=True)
 
     await engine.dispose()
 
