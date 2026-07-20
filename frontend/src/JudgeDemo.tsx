@@ -59,6 +59,7 @@ interface Proposal {
   status: string
   recalled_memory_ids?: string[]
   insufficient_evidence?: boolean
+  error?: string
 }
 
 interface RunEvent {
@@ -78,6 +79,7 @@ interface RunOut {
   events: RunEvent[]
   proposal: Proposal | null
   status: string
+  error?: string
   decision?: Record<string, unknown>
 }
 
@@ -161,6 +163,22 @@ function truncate(text: string, max: number) {
 
 function formatValue(value: number | undefined, unit: string) {
   return value === undefined ? '-' : `${Math.round(value)}${unit}`
+}
+
+function memoryLabel(m: Memory) {
+  if (m.status === 'quarantined') return 'Quarantined poison attempt'
+  if (m.status === 'superseded') return 'Older approved procedure'
+  if (m.status === 'simulated_safe' || m.status === 'active') return 'Current approved procedure'
+  return m.type
+}
+
+function extractToolCalls(run: RunOut | null) {
+  const ev = run?.events.find((e) => e.event_type === 'tools.called')
+  if (!ev?.payload?.results) return []
+  return (ev.payload.results as { tool: string; result: Record<string, unknown> }[]).map((r) => ({
+    name: r.tool,
+    summary: r.result.runbook ? 'runbook loaded' : r.result.last_deployments ? 'deployments listed' : 'metrics inspected',
+  }))
 }
 
 async function api<T>(url: string, options?: RequestInit): Promise<T> {
@@ -375,29 +393,33 @@ export default function TriageDashboard() {
     }
   }
 
-  const runTriage = async (mode: 'stateless' | 'memory') => {
-    if (mode === 'memory') {
-      setMemoryRun(null)
-      setDecision(null)
-      setRunning(true)
-    } else {
-      setStatelessRun(null)
-      setStatelessRunning(true)
-    }
+  const runBothTriages = async () => {
+    setMemoryRun(null)
+    setStatelessRun(null)
+    setDecision(null)
+    setRunning(true)
+    setStatelessRunning(true)
     setError(null)
     try {
-      const run = await api<RunOut>(`/api/agent/runs?mode=${mode}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(ALERT),
-      })
-      if (mode === 'memory') setMemoryRun(run)
-      else setStatelessRun(run)
+      const [stateless, memory] = await Promise.all([
+        api<RunOut>(`/api/agent/runs?mode=stateless`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(ALERT),
+        }),
+        api<RunOut>(`/api/agent/runs?mode=memory`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(ALERT),
+        }),
+      ])
+      setStatelessRun(stateless)
+      setMemoryRun(memory)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
-      if (mode === 'memory') setRunning(false)
-      else setStatelessRunning(false)
+      setRunning(false)
+      setStatelessRunning(false)
     }
   }
 
@@ -438,14 +460,8 @@ export default function TriageDashboard() {
     [filteredMemories]
   )
 
-  const toolCalls = useMemo(() => {
-    const ev = memoryRun?.events.find((e) => e.event_type === 'tools.called')
-    if (!ev?.payload?.results) return []
-    return (ev.payload.results as { tool: string; result: Record<string, unknown> }[]).map((r) => ({
-      name: r.tool,
-      summary: r.result.runbook ? 'runbook loaded' : r.result.last_deployments ? 'deployments listed' : 'metrics inspected',
-    }))
-  }, [memoryRun])
+  const memoryToolCalls = useMemo(() => extractToolCalls(memoryRun), [memoryRun])
+  const statelessToolCalls = useMemo(() => extractToolCalls(statelessRun), [statelessRun])
 
   const memoryPack = useMemo(() => {
     const ev = memoryRun?.events.find((e) => e.event_type === 'memory.packed')
@@ -491,10 +507,10 @@ export default function TriageDashboard() {
           ) : (
             <button
               className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-50"
-              onClick={() => runTriage('memory')}
-              disabled={running}
+              onClick={runBothTriages}
+              disabled={running || statelessRunning}
             >
-              {running ? 'Running triage…' : 'Run triage'}
+              {running || statelessRunning ? 'Running both modes…' : 'Run both triage modes'}
             </button>
           )}
         </div>
@@ -530,6 +546,17 @@ export default function TriageDashboard() {
 
         {memories.length > 0 && (
           <>
+            <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-4">
+              <h2 className="font-semibold text-indigo-900 mb-1">Why this demo matters</h2>
+              <p className="text-sm text-indigo-800 leading-relaxed">
+                TriageTrace is a temporal memory firewall. It prevents incident-response agents from
+                acting on stale runbooks, untrusted external instructions, or stateless hallucinations.
+                Click <strong>Run both triage modes</strong> to see the same incident handled without
+                memory and with the memory firewall that recalls the current approved procedure and
+                rejects a poisoned instruction.
+              </p>
+            </div>
+
             <div className="bg-white rounded-lg shadow p-5 border-l-4 border-rose-500">
               <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
                 <div>
@@ -602,9 +629,7 @@ export default function TriageDashboard() {
                             {idx + 1}
                           </span>
                           <p className="text-xs text-slate-500">{shortDate(m.source_timestamp)}</p>
-                          <p className="text-xs font-mono text-slate-500">
-                            {m.type} / {m.subject}
-                          </p>
+                          <p className="text-xs font-semibold text-indigo-700">{memoryLabel(m)}</p>
                           <p className="text-sm text-slate-800 mt-1" title={m.content}>
                             {truncate(m.content, 80)}
                           </p>
@@ -624,46 +649,87 @@ export default function TriageDashboard() {
                     <h2 className="font-semibold text-slate-800 flex items-center gap-2">
                       <IconDot label="AI" tone="indigo" /> Triage recommendation
                     </h2>
-                    {!statelessRun && !statelessRunning && memoryRun && (
+                    {(memoryRun || statelessRun) && !running && !statelessRunning && (
                       <button
                         className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-800 px-3 py-1.5 rounded border border-slate-300"
-                        onClick={() => runTriage('stateless')}
+                        onClick={runBothTriages}
                       >
-                        Compare stateless
+                        Re-run both modes
                       </button>
                     )}
-                    {statelessRunning && <span className="text-xs text-slate-500">Running stateless baseline…</span>}
+                    {(running || statelessRunning) && <span className="text-xs text-slate-500">Running both triage modes…</span>}
                   </div>
 
-                  {running && !memoryRun && (
+                  {(running || statelessRunning) && !memoryRun && !statelessRun && (
                     <div className="text-center py-10">
                       <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-                      <p className="mt-3 text-slate-600">The agent is recalling memory and reasoning…</p>
+                      <p className="mt-3 text-slate-600">The agent is running stateless and memory modes in parallel…</p>
                     </div>
                   )}
 
-                  {!running && !memoryRun && (
+                  {!running && !statelessRunning && !memoryRun && !statelessRun && (
                     <p className="text-slate-500 text-sm py-6 text-center">
-                      Click <strong>Run triage</strong> to start the Qwen-powered triage workflow.
+                      Click <strong>Run both triage modes</strong> to compare the stateless baseline against the memory firewall.
                     </p>
                   )}
 
-                  {memoryRun && memoryRun.proposal && (
+                  {(memoryRun || statelessRun) && !running && !statelessRunning && (
                     <div className="space-y-5">
+                      {(memoryRun?.error || statelessRun?.error || memoryRun?.proposal?.error || statelessRun?.proposal?.error || memoryRun?.proposal?.status === 'invalid' || statelessRun?.proposal?.status === 'invalid') && (
+                        <div className="bg-rose-50 border border-rose-200 rounded-lg p-4">
+                          <h3 className="text-sm font-semibold text-rose-900 mb-2 flex items-center gap-2">
+                            <IconDot label="!" tone="rose" /> Triage failed validation
+                          </h3>
+                          <p className="text-xs text-rose-800">
+                            {memoryRun?.error ||
+                              memoryRun?.proposal?.error ||
+                              statelessRun?.error ||
+                              statelessRun?.proposal?.error ||
+                              'One of the triage modes returned an invalid proposal.'}
+                          </p>
+                          <button
+                            className="mt-3 bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-50"
+                            onClick={runBothTriages}
+                          >
+                            Retry both modes
+                          </button>
+                        </div>
+                      )}
+
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="border rounded-lg p-4 bg-slate-50">
                           <h3 className="text-sm font-semibold text-slate-600 mb-2 flex items-center gap-2">
-                            <IconDot label="S0" tone="slate" /> Stateless baseline
+                            <IconDot label="S0" tone="slate" /> Without memory
                           </h3>
-                          {statelessRun?.proposal ? (
+                          {statelessRun?.error ? (
+                            <p className="text-xs text-rose-700">{statelessRun.error}</p>
+                          ) : statelessRun?.proposal?.status === 'invalid' ? (
+                            <p className="text-xs text-rose-700">{statelessRun.proposal.error || 'Invalid proposal'}</p>
+                          ) : statelessRun?.proposal ? (
                             <>
                               <p className="text-sm font-medium text-slate-800 mb-2">{statelessRun.proposal.action}</p>
                               <p className="text-xs text-slate-600 line-clamp-6">{statelessRun.proposal.evidence}</p>
+                              {statelessToolCalls.length > 0 && (
+                                <div className="mt-3 space-y-1">
+                                  <p className="text-[10px] font-semibold text-slate-500 uppercase">Tools used</p>
+                                  {statelessToolCalls.map((t, i) => (
+                                    <p key={i} className="text-[10px] text-slate-500">
+                                      • {t.name}: {t.summary}
+                                    </p>
+                                  ))}
+                                </div>
+                              )}
                             </>
                           ) : statelessRunning ? (
                             <p className="text-sm text-slate-500">Running…</p>
                           ) : (
                             <p className="text-sm text-slate-500">No baseline yet.</p>
+                          )}
+                          {statelessRun?.proposal && (
+                            <div className="flex flex-wrap gap-2 mt-3">
+                              <span className="px-2 py-1 rounded bg-slate-200 text-slate-800 text-[10px]">Risk: {statelessRun.proposal.risk}</span>
+                              <span className="px-2 py-1 rounded bg-slate-200 text-slate-800 text-[10px]">Status: {statelessRun.proposal.status}</span>
+                            </div>
                           )}
                         </div>
 
@@ -674,14 +740,50 @@ export default function TriageDashboard() {
                             </span>
                           )}
                           <h3 className="text-sm font-semibold text-emerald-900 mb-2 flex items-center gap-2">
-                            <IconDot label="M+" tone="emerald" /> Memory mode
+                            <IconDot label="M+" tone="emerald" /> With memory
                           </h3>
-                          <p className="text-sm font-medium text-slate-900 mb-2">{memoryRun.proposal.action}</p>
-                          <p className="text-xs text-slate-700 line-clamp-6">{memoryRun.proposal.evidence}</p>
-                          {recalledMemory && (
-                            <p className="text-xs text-emerald-800 mt-2 font-medium" title={recalledMemory.content}>
-                              Recalled: {truncate(recalledMemory.content, 70)}
-                            </p>
+                          {memoryRun?.error ? (
+                            <p className="text-xs text-rose-700">{memoryRun.error}</p>
+                          ) : memoryRun?.proposal?.status === 'invalid' ? (
+                            <p className="text-xs text-rose-700">{memoryRun.proposal.error || 'Invalid proposal'}</p>
+                          ) : memoryRun?.proposal ? (
+                            <>
+                              <p className="text-sm font-medium text-slate-900 mb-2">{memoryRun.proposal.action}</p>
+                              <p className="text-xs text-slate-700 line-clamp-6">{memoryRun.proposal.evidence}</p>
+                              {recalledMemory && (
+                                <p className="text-xs text-emerald-800 mt-2 font-medium" title={recalledMemory.content}>
+                                  Recalled: {truncate(recalledMemory.content, 70)}
+                                </p>
+                              )}
+                              <a
+                                href="https://github.com/lewbei/qwen-hackathon-triage-trace/blob/main/docs/ARCHITECTURE.md"
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-[10px] text-indigo-600 hover:text-indigo-800 mt-2 inline-block font-medium"
+                              >
+                                Learn more about the memory firewall →
+                              </a>
+                              {memoryToolCalls.length > 0 && (
+                                <div className="mt-3 space-y-1">
+                                  <p className="text-[10px] font-semibold text-slate-500 uppercase">Tools used</p>
+                                  {memoryToolCalls.map((t, i) => (
+                                    <p key={i} className="text-[10px] text-slate-500">
+                                      • {t.name}: {t.summary}
+                                    </p>
+                                  ))}
+                                </div>
+                              )}
+                            </>
+                          ) : running ? (
+                            <p className="text-sm text-slate-500">Running…</p>
+                          ) : (
+                            <p className="text-sm text-slate-500">No memory run yet.</p>
+                          )}
+                          {memoryRun?.proposal && (
+                            <div className="flex flex-wrap gap-2 mt-3">
+                              <span className="px-2 py-1 rounded bg-slate-200 text-slate-800 text-[10px]">Risk: {memoryRun.proposal.risk}</span>
+                              <span className="px-2 py-1 rounded bg-slate-200 text-slate-800 text-[10px]">Status: {memoryRun.proposal.status}</span>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -708,12 +810,7 @@ export default function TriageDashboard() {
                         </div>
                       )}
 
-                      <div className="flex flex-wrap gap-2 text-sm">
-                        <span className="px-2 py-1 rounded bg-slate-200 text-slate-800 text-xs">Risk: {memoryRun.proposal.risk}</span>
-                        <span className="px-2 py-1 rounded bg-slate-200 text-slate-800 text-xs">Status: {memoryRun.proposal.status}</span>
-                      </div>
-
-                      {memoryRun.proposal.status === 'pending' && (
+                      {memoryRun?.proposal?.status === 'pending' && (
                         <div className="border-t pt-4 mt-4">
                           <label className="block text-sm text-slate-600 mb-2">Operator feedback</label>
                           <input
@@ -773,35 +870,63 @@ export default function TriageDashboard() {
                   <h2 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
                     <IconDot label="TR" tone="indigo" /> Triage trace
                   </h2>
-                  {memoryRun ? (
-                    <div className="space-y-3">
-                      {memoryPack && (
-                        <div className="flex gap-3 items-start">
-                          <IconDot label="DB" tone="emerald" />
-                          <div>
-                            <p className="text-sm font-medium text-slate-800">Memory firewall recalled {memoryPack.packed_count} record(s)</p>
-                            <p className="text-xs text-slate-500">
-                              {memoryPack.rejected_count} rejected, {memoryPack.omitted_count} omitted
-                            </p>
-                          </div>
+                  {memoryRun || statelessRun ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {statelessRun && (
+                        <div className="space-y-3">
+                          <p className="text-xs font-semibold text-slate-500 uppercase">Without memory</p>
+                          {statelessRun.proposal && (
+                            <div className="flex gap-3 items-start">
+                              <IconDot label="AI" tone="indigo" />
+                              <div>
+                                <p className="text-sm font-medium text-slate-800">Qwen proposed: {statelessRun.proposal.action}</p>
+                                <p className="text-xs text-slate-500">Risk {statelessRun.proposal.risk}</p>
+                              </div>
+                            </div>
+                          )}
+                          {statelessToolCalls.map((t, i) => (
+                            <div key={i} className="flex gap-3 items-start">
+                              <IconDot label="TC" tone="indigo" />
+                              <div>
+                                <p className="text-sm font-medium text-slate-800">{t.name}</p>
+                                <p className="text-xs text-slate-500">{t.summary}</p>
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       )}
-                      {toolCalls.map((t, i) => (
-                        <div key={i} className="flex gap-3 items-start">
-                          <IconDot label="TC" tone="indigo" />
-                          <div>
-                            <p className="text-sm font-medium text-slate-800">{t.name}</p>
-                            <p className="text-xs text-slate-500">{t.summary}</p>
-                          </div>
-                        </div>
-                      ))}
-                      {memoryRun.proposal && (
-                        <div className="flex gap-3 items-start">
-                          <IconDot label="AI" tone="indigo" />
-                          <div>
-                            <p className="text-sm font-medium text-slate-800">Qwen proposed: {memoryRun.proposal.action}</p>
-                            <p className="text-xs text-slate-500">Risk {memoryRun.proposal.risk}</p>
-                          </div>
+                      {memoryRun && (
+                        <div className="space-y-3">
+                          <p className="text-xs font-semibold text-slate-500 uppercase">With memory</p>
+                          {memoryPack && (
+                            <div className="flex gap-3 items-start">
+                              <IconDot label="DB" tone="emerald" />
+                              <div>
+                                <p className="text-sm font-medium text-slate-800">Memory firewall recalled {memoryPack.packed_count} record(s)</p>
+                                <p className="text-xs text-slate-500">
+                                  {memoryPack.rejected_count} rejected, {memoryPack.omitted_count} omitted
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                          {memoryToolCalls.map((t, i) => (
+                            <div key={i} className="flex gap-3 items-start">
+                              <IconDot label="TC" tone="indigo" />
+                              <div>
+                                <p className="text-sm font-medium text-slate-800">{t.name}</p>
+                                <p className="text-xs text-slate-500">{t.summary}</p>
+                              </div>
+                            </div>
+                          ))}
+                          {memoryRun.proposal && (
+                            <div className="flex gap-3 items-start">
+                              <IconDot label="AI" tone="indigo" />
+                              <div>
+                                <p className="text-sm font-medium text-slate-800">Qwen proposed: {memoryRun.proposal.action}</p>
+                                <p className="text-xs text-slate-500">Risk {memoryRun.proposal.risk}</p>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -832,7 +957,7 @@ export default function TriageDashboard() {
                   <div className="grid grid-cols-2 gap-3">
                     <MetricChip label="Overall" value={scoreOverall} tone={scoreOverall === 'improved' ? 'emerald' : scoreOverall === 'high risk' ? 'rose' : 'slate'} />
                     <MetricChip label="Memory" value={memoryPack ? `${memoryPack.packed_count}/${memoryPack.packed_count + memoryPack.rejected_count + memoryPack.omitted_count}` : '-'} tone="indigo" />
-                    <MetricChip label="Tools" value={String(toolCalls.length)} tone="amber" />
+                    <MetricChip label="Tools" value={String(memoryToolCalls.length)} tone="amber" />
                     <MetricChip label="Risk" value={memoryRun?.proposal?.risk ?? '-'} tone={memoryRun?.proposal?.risk === 'high' ? 'rose' : 'emerald'} />
                   </div>
                 </div>
