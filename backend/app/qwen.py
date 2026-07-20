@@ -12,11 +12,19 @@ from backend.app.config import settings
 
 class QwenGateway:
     def __init__(self, api_key: str | None = None) -> None:
-        self._api_key = api_key or settings.qwen_api_key or "sk-dummy"
-        self.client = AsyncOpenAI(
-            api_key=self._api_key,
-            base_url=settings.qwen_base_url,
+        self._api_key = (
+            api_key
+            or settings.qwen_api_key
+            or settings.qwen_chat_api_key
+            or settings.qwen_embedding_api_key
+            or "sk-dummy"
         )
+        chat_key = settings.qwen_chat_api_key or self._api_key
+        chat_base = settings.qwen_chat_base_url or settings.qwen_base_url
+        embed_key = settings.qwen_embedding_api_key or self._api_key
+        embed_base = settings.qwen_embedding_base_url or settings.qwen_base_url
+        self.chat_client = AsyncOpenAI(api_key=chat_key, base_url=chat_base)
+        self.embedding_client = AsyncOpenAI(api_key=embed_key, base_url=embed_base)
 
     def _ensure_key(self) -> None:
         if not self._api_key or self._api_key == "sk-dummy":
@@ -33,7 +41,7 @@ class QwenGateway:
     ) -> dict[str, Any]:
         self._ensure_key()
         start = time.perf_counter()
-        response = await self.client.chat.completions.create(
+        response = await self.chat_client.chat.completions.create(
             model=model or settings.qwen_reasoning_model,
             messages=messages,  # type: ignore[arg-type]
             tools=tools,
@@ -94,7 +102,7 @@ class QwenGateway:
 
     async def embed(self, texts: list[str], dimensions: int = 1536) -> list[list[float]]:
         self._ensure_key()
-        response = await self.client.embeddings.create(
+        response = await self.embedding_client.embeddings.create(
             input=texts,
             model=settings.qwen_embedding_model,
             dimensions=dimensions,

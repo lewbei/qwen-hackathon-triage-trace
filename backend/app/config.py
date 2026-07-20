@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     qwen_rerank_model: str = "qwen3-rerank"
     qwen_rerank_url: str = "https://dashscope-intl.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank"
 
+    # Optional overrides so chat and embeddings can use different endpoints/keys.
+    qwen_chat_api_key: str = ""
+    qwen_chat_base_url: str = ""
+    qwen_embedding_api_key: str = ""
+    qwen_embedding_base_url: str = ""
+
     database_url: str = "postgresql+asyncpg://postgres:postgres@db:5432/triagetrace"
     sync_database_url: str = "postgresql://postgres:postgres@db:5432/triagetrace"
 

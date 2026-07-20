@@ -1,10 +1,21 @@
 flowchart LR
-    U[Judge / Operator] --> UI[React Dashboard on Alibaba ECS]
-    UI --> API[FastAPI Agent Orchestrator]
-    API --> Q[Qwen Cloud<br/>qwen3.7-plus / qwen3.6-flash]
-    API --> T[Metrics, Deployment and Runbook Tools]
-    API --> M[Temporal Memory Firewall]
-    M --> E[Qwen Embedding and Rerank]
-    M --> DB[PostgreSQL + pgvector<br/>on Alibaba ECS]
-    API --> H[Human Approval Gate]
-    H --> X[Allowlisted Simulation Executor]
+    subgraph client ["Client"]
+        browser["React Judge Dashboard (browser)"]
+    end
+    subgraph gateway ["Public Ingress"]
+        nginx["Nginx UI Container"]
+    end
+    subgraph service ["Application"]
+        api["FastAPI TriageTrace Backend"]
+    end
+    subgraph datastore ["Durable State"]
+        pg["PostgreSQL 16 + pgvector"]
+    end
+    subgraph external ["External AI"]
+        qwen["Qwen Cloud"]
+    end
+
+    browser <-->|"UI + REST/SSE"| nginx
+    nginx -->|"Proxies /api"| api
+    api -->|"Reads/Writes memories + runs"| pg
+    api -.->|"Qwen Cloud: chat, embed, rerank"| qwen

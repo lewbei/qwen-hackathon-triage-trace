@@ -69,7 +69,7 @@ def _answer_match(prediction: str, answers: list[str]) -> bool:
 
 async def _run_mab(
     split: str = "Conflict_Resolution",
-    max_samples: int = 1,
+    max_samples: int = 3,
     max_questions_per_sample: int | None = 5,
 ) -> dict[str, Any]:
     from datasets import load_dataset

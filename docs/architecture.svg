@@ -1,0 +1,361 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1500" viewBox="0 0 2400 1500" role="img" aria-labelledby="title desc">
+  <title id="title">TriageTrace system architecture</title>
+  <desc id="desc">Architecture of the TriageTrace temporal memory firewall, showing the operator browser, React and Nginx frontend, FastAPI backend modules, PostgreSQL with pgvector, and Qwen Cloud model services on Alibaba Cloud.</desc>
+  <defs>
+    <linearGradient id="headerGradient" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#0B1531"/>
+      <stop offset="0.58" stop-color="#152A55"/>
+      <stop offset="1" stop-color="#173C69"/>
+    </linearGradient>
+    <linearGradient id="backendGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#F5F9FF"/>
+    </linearGradient>
+    <linearGradient id="qwenGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFF9ED"/>
+      <stop offset="1" stop-color="#FFFDF8"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="16" flood-color="#10254A" flood-opacity="0.10"/>
+    </filter>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="#10254A" flood-opacity="0.09"/>
+    </filter>
+    <marker id="arrowBlue" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="16" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+      <path d="M1 1L11 6L1 11Z" fill="#2563EB"/>
+    </marker>
+    <marker id="arrowMint" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="16" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+      <path d="M1 1L11 6L1 11Z" fill="#059669"/>
+    </marker>
+    <marker id="arrowAmber" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="16" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+      <path d="M1 1L11 6L1 11Z" fill="#D97706"/>
+    </marker>
+    <marker id="arrowSlate" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="16" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+      <path d="M1 1L11 6L1 11Z" fill="#64748B"/>
+    </marker>
+    <style>
+      text { font-family: "DejaVu Sans", "Noto Sans", Arial, sans-serif; }
+      .h1 { font-size: 51px; font-weight: 700; fill: #FFFFFF; letter-spacing: -1px; }
+      .subtitle { font-size: 22px; font-weight: 400; fill: #C7D7F3; }
+      .eyebrow { font-size: 15px; font-weight: 700; letter-spacing: 2.2px; }
+      .zone-title { font-size: 23px; font-weight: 700; fill: #17325C; }
+      .zone-sub { font-size: 16px; font-weight: 400; fill: #64748B; }
+      .node-title { font-size: 22px; font-weight: 700; fill: #10254A; }
+      .node-sub { font-size: 16px; font-weight: 400; fill: #52627B; }
+      .small { font-size: 14px; font-weight: 500; fill: #52627B; }
+      .tiny { font-size: 13px; font-weight: 600; fill: #64748B; }
+      .label { font-size: 15px; font-weight: 700; fill: #334155; }
+      .model { font-size: 20px; font-weight: 700; fill: #713F12; }
+      .chip-title { font-size: 17px; font-weight: 700; fill: #10254A; }
+      .chip-sub { font-size: 14px; font-weight: 400; fill: #52627B; }
+      .arrow-blue { stroke: #2563EB; stroke-width: 4; fill: none; stroke-linecap: round; }
+      .arrow-blue-bi { stroke: #2563EB; stroke-width: 4; fill: none; stroke-linecap: round; }
+      .arrow-mint { stroke: #059669; stroke-width: 4; fill: none; stroke-linecap: round; }
+      .arrow-amber { stroke: #D97706; stroke-width: 4; fill: none; stroke-dasharray: 11 9; stroke-linecap: round; }
+      .arrow-amber-bi { stroke: #D97706; stroke-width: 4; fill: none; stroke-dasharray: 11 9; stroke-linecap: round; }
+      .arrow-slate { stroke: #64748B; stroke-width: 3.5; fill: none; stroke-linecap: round; }
+      .inner-arrow { stroke: #8AA4C8; stroke-width: 3; fill: none; stroke-linecap: round; }
+    </style>
+  </defs>
+
+  <!-- Canvas and header -->
+  <rect width="2400" height="1500" fill="#F6F8FC"/>
+  <rect width="2400" height="190" fill="#0B1531"/>
+  <circle cx="78" cy="74" r="25" fill="#34D399" opacity="0.18"/>
+  <path d="M62 77L74 89L96 61" fill="none" stroke="#6EE7B7" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="122" y="78" font-family="DejaVu Sans, Noto Sans, Arial, sans-serif" font-size="51" font-weight="700" fill="#FFFFFF">TriageTrace</text>
+  <text x="122" y="121" font-family="DejaVu Sans, Noto Sans, Arial, sans-serif" font-size="22" fill="#C7D7F3">Qwen-powered temporal memory firewall for incident-response agents</text>
+  <g transform="translate(1732 52)">
+    <rect width="226" height="44" rx="22" fill="#233C68" stroke="#5D77A5"/>
+    <text x="113" y="28" text-anchor="middle" class="eyebrow" fill="#DCE8FA">TRACK 1 · MEMORYAGENT</text>
+  </g>
+  <g transform="translate(1978 52)">
+    <rect width="310" height="44" rx="22" fill="#0D604F" stroke="#43B997"/>
+    <text x="155" y="28" text-anchor="middle" class="eyebrow" fill="#D8FFF3">QWEN + ALIBABA CLOUD</text>
+  </g>
+  <g transform="translate(1740 119)">
+    <line x1="0" y1="0" x2="42" y2="0" class="arrow-blue"/>
+    <text x="56" y="6" class="small" fill="#D7E5FA">application data</text>
+    <line x1="212" y1="0" x2="254" y2="0" class="arrow-amber"/>
+    <text x="270" y="6" class="small" fill="#D7E5FA">Qwen API</text>
+    <line x1="384" y1="0" x2="426" y2="0" class="arrow-mint"/>
+    <text x="442" y="6" class="small" fill="#D7E5FA">screened write</text>
+  </g>
+
+  <!-- Zone headings -->
+  <text x="78" y="244" class="eyebrow" fill="#64748B">PUBLIC CLIENT</text>
+  <text x="396" y="244" class="eyebrow" fill="#2563EB">ALIBABA CLOUD ECS · DOCKER COMPOSE</text>
+  <text x="1770" y="244" class="eyebrow" fill="#B45309">EXTERNAL AI SERVICE</text>
+
+  <!-- Alibaba ECS trust boundary -->
+  <rect x="360" y="266" width="1324" height="1004" rx="30" fill="#EEF5FF" fill-opacity="0.58" stroke="#77A7ED" stroke-width="3" stroke-dasharray="12 10"/>
+  <g transform="translate(390 286)">
+    <rect width="260" height="35" rx="17.5" fill="#DCEBFF"/>
+    <circle cx="20" cy="17.5" r="6" fill="#2563EB"/>
+    <text x="38" y="23" class="tiny" fill="#2354A3">PRIVATE CONTAINER NETWORK</text>
+  </g>
+
+  <!-- Public operator/browser -->
+  <g filter="url(#shadow)">
+    <rect x="56" y="392" width="270" height="286" rx="26" fill="#FFFFFF" stroke="#C9D4E7" stroke-width="2"/>
+  </g>
+  <circle cx="191" cy="466" r="36" fill="#EEF2FF" stroke="#818CF8" stroke-width="2"/>
+  <circle cx="191" cy="455" r="11" fill="none" stroke="#4F46E5" stroke-width="4"/>
+  <path d="M169 487C172 469 210 469 213 487" fill="none" stroke="#4F46E5" stroke-width="4" stroke-linecap="round"/>
+  <text x="191" y="534" text-anchor="middle" class="node-title">Judge / Operator</text>
+  <text x="191" y="565" text-anchor="middle" class="node-sub">incident input</text>
+  <text x="191" y="590" text-anchor="middle" class="node-sub">approval decision</text>
+  <text x="191" y="615" text-anchor="middle" class="node-sub">PASS / FAIL evidence</text>
+  <rect x="91" y="638" width="200" height="26" rx="13" fill="#F1F5F9"/>
+  <text x="191" y="656" text-anchor="middle" class="tiny">UNTRUSTED PUBLIC INPUT</text>
+
+  <!-- Frontend container -->
+  <g filter="url(#shadow)">
+    <rect x="414" y="365" width="346" height="258" rx="25" fill="#FFFFFF" stroke="#A8C7F2" stroke-width="2"/>
+  </g>
+  <rect x="414" y="365" width="346" height="54" rx="25" fill="#E8F2FF"/>
+  <path d="M414 394H760" stroke="#C8DCF7" stroke-width="2"/>
+  <circle cx="445" cy="392" r="7" fill="#EF4444"/>
+  <circle cx="468" cy="392" r="7" fill="#F59E0B"/>
+  <circle cx="491" cy="392" r="7" fill="#10B981"/>
+  <text x="517" y="399" class="tiny" fill="#35649F">UI CONTAINER · PORT 80</text>
+  <rect x="450" y="452" width="72" height="72" rx="15" fill="#DBEAFE"/>
+  <path d="M468 478H504M468 492H498M468 506H490" stroke="#2563EB" stroke-width="5" stroke-linecap="round"/>
+  <text x="544" y="473" class="node-title">React + Nginx</text>
+  <text x="544" y="503" class="node-sub">judge-facing dashboard</text>
+  <text x="450" y="558" class="small">Serves SPA · proxies <tspan font-family="monospace">/api</tspan></text>
+  <text x="450" y="584" class="small">Streams run events with SSE</text>
+  <rect x="450" y="595" width="263" height="18" rx="9" fill="#EFF6FF"/>
+
+  <!-- PostgreSQL datastore -->
+  <g filter="url(#shadow)">
+    <rect x="414" y="792" width="346" height="324" rx="25" fill="#FFFFFF" stroke="#8FD5C1" stroke-width="2"/>
+  </g>
+  <rect x="414" y="792" width="346" height="52" rx="25" fill="#E5F8F1"/>
+  <text x="446" y="825" class="tiny" fill="#08775A">DB CONTAINER · INTERNAL 5432</text>
+  <ellipse cx="484" cy="910" rx="38" ry="15" fill="#D1FAE5" stroke="#059669" stroke-width="3"/>
+  <path d="M446 910V972C446 980 463 987 484 987C505 987 522 980 522 972V910" fill="#ECFDF5" stroke="#059669" stroke-width="3"/>
+  <ellipse cx="484" cy="972" rx="38" ry="15" fill="#D1FAE5" stroke="#059669" stroke-width="3"/>
+  <text x="544" y="905" class="node-title">PostgreSQL 16</text>
+  <text x="544" y="936" class="node-sub">with pgvector</text>
+  <text x="446" y="1027" class="small">Memory vectors + lifecycle lineage</text>
+  <text x="446" y="1052" class="small">Run events + derived verdict state</text>
+  <g transform="translate(446 1070)">
+    <rect width="278" height="31" rx="15.5" fill="#F0FDF4" stroke="#A7F3D0"/>
+    <path d="M18 9V22M13 14L18 9L23 14" fill="none" stroke="#059669" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="34" y="21" class="tiny" fill="#08775A">PERSISTENT DOCKER VOLUME</text>
+  </g>
+
+  <!-- FastAPI container and internal modules -->
+  <g filter="url(#shadow)">
+    <rect x="824" y="332" width="808" height="880" rx="28" fill="#FFFFFF" stroke="#7FA9E8" stroke-width="2.5"/>
+  </g>
+  <rect x="824" y="332" width="808" height="64" rx="28" fill="#DCEBFF"/>
+  <path d="M824 395H1632" stroke="#BED5F5" stroke-width="2"/>
+  <g transform="translate(857 350)">
+    <rect width="38" height="28" rx="7" fill="#2563EB"/>
+    <path d="M10 9H28M10 15H28M10 21H21" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round"/>
+  </g>
+  <text x="913" y="377" class="zone-title">FastAPI backend container</text>
+  <text x="1354" y="376" class="tiny" fill="#35649F">INTERNAL :8000 · NOT PUBLIC</text>
+
+  <!-- API Guard -->
+  <rect x="866" y="430" width="724" height="112" rx="19" fill="#F8FAFC" stroke="#CBD8EA" stroke-width="2"/>
+  <rect x="888" y="452" width="48" height="48" rx="13" fill="#EDE9FE"/>
+  <path d="M912 459L929 466V479C929 489 922 497 912 501C902 497 895 489 895 479V466Z" fill="none" stroke="#7C3AED" stroke-width="3"/>
+  <path d="M905 479L910 484L920 473" fill="none" stroke="#7C3AED" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="954" y="470" class="node-title">API guard</text>
+  <text x="954" y="498" class="node-sub">rate limit · schema validation · tenant resolution</text>
+  <g transform="translate(1280 452)">
+    <rect width="282" height="58" rx="15" fill="#F3E8FF" stroke="#D8B4FE"/>
+    <text x="141" y="24" text-anchor="middle" class="tiny" fill="#6B21A8">SERVER-OWNED TRUST</text>
+    <text x="141" y="44" text-anchor="middle" class="small" fill="#6B21A8">tenant · provenance · authority</text>
+  </g>
+
+  <!-- Orchestrator -->
+  <rect x="866" y="584" width="344" height="174" rx="20" fill="#EFF6FF" stroke="#93C5FD" stroke-width="2"/>
+  <circle cx="907" cy="628" r="20" fill="#2563EB"/>
+  <path d="M897 628H917M907 618V638" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+  <text x="940" y="625" class="node-title">Agent orchestrator</text>
+  <text x="895" y="669" class="small">Recall → reason → inspect → propose</text>
+  <text x="895" y="696" class="small">Always requires human approval</text>
+  <g transform="translate(895 718)">
+    <rect width="284" height="25" rx="12.5" fill="#DBEAFE"/>
+    <text x="142" y="17" text-anchor="middle" class="tiny" fill="#1D4ED8">NO AUTOMATIC REMEDIATION</text>
+  </g>
+
+  <!-- Read-only tools -->
+  <rect x="1244" y="584" width="346" height="174" rx="20" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="2"/>
+  <rect x="1272" y="608" width="43" height="43" rx="12" fill="#E2E8F0"/>
+  <path d="M1283 628L1291 636L1305 619" fill="none" stroke="#475569" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="1330" y="631" class="node-title">Evidence tools</text>
+  <text x="1272" y="674" class="small">Metrics · recent deployments</text>
+  <text x="1272" y="700" class="small">Current runbook</text>
+  <text x="1272" y="730" class="tiny">READ-ONLY DEMO FIXTURE ADAPTERS</text>
+
+  <!-- Memory Firewall -->
+  <rect x="866" y="800" width="724" height="254" rx="22" fill="#F0FDFA" stroke="#5EEAD4" stroke-width="2.5"/>
+  <g transform="translate(888 821)">
+    <path d="M26 0L49 9V27C49 42 39 53 26 59C13 53 3 42 3 27V9Z" fill="#CCFBF1" stroke="#0F766E" stroke-width="3"/>
+    <path d="M14 28L23 37L39 20" fill="none" stroke="#0F766E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="958" y="853" class="node-title">Temporal memory firewall</text>
+  <text x="958" y="881" class="node-sub">one shared lifecycle for safe accumulation and recall</text>
+  <line x1="1228" y1="901" x2="1228" y2="1025" stroke="#99E8D9" stroke-width="2"/>
+  <text x="904" y="927" class="tiny" fill="#0F766E">WRITE PATH</text>
+  <text x="904" y="958" class="small">Redact → poison / policy gate</text>
+  <text x="904" y="984" class="small">Authority + timestamp supersession</text>
+  <text x="904" y="1010" class="small">Atomic status + lineage update</text>
+  <text x="1260" y="927" class="tiny" fill="#0F766E">RECALL PATH</text>
+  <text x="1260" y="958" class="small">Tenant + status + time filter</text>
+  <text x="1260" y="984" class="small">Vector → rerank → utility + MMR</text>
+  <text x="1260" y="1010" class="small">Policy-first 800-token pack</text>
+
+  <!-- Approval and predictive simulator -->
+  <rect x="866" y="1090" width="724" height="90" rx="20" fill="#FFF7ED" stroke="#FDBA74" stroke-width="2"/>
+  <circle cx="910" cy="1135" r="22" fill="#FFEDD5" stroke="#EA580C" stroke-width="2"/>
+  <path d="M899 1135L907 1143L922 1126" fill="none" stroke="#EA580C" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="949" y="1127" class="node-title">Operator decision + predictive simulator</text>
+  <text x="949" y="1157" class="node-sub">Approved + predicted improvement → <tspan font-weight="700" fill="#047857">simulated_safe</tspan> memory</text>
+  <rect x="1380" y="1112" width="184" height="47" rx="14" fill="#FFFFFF" stroke="#FED7AA"/>
+  <text x="1472" y="1132" text-anchor="middle" class="tiny" fill="#9A3412">SIMULATION ONLY</text>
+  <text x="1472" y="1151" text-anchor="middle" class="small" fill="#9A3412">no action execution</text>
+
+  <!-- Qwen Cloud external boundary -->
+  <g filter="url(#shadow)">
+    <rect x="1750" y="300" width="592" height="826" rx="30" fill="#FFF9ED" stroke="#F4B65E" stroke-width="2.5"/>
+  </g>
+  <path d="M1810 372C1815 346 1836 331 1860 335C1870 315 1891 304 1915 309C1935 313 1950 328 1955 347C1979 344 1998 361 1998 384C1998 405 1982 420 1960 420H1846C1823 420 1806 402 1806 381C1806 378 1808 375 1810 372Z" fill="#FEF3C7" stroke="#D97706" stroke-width="3"/>
+  <text x="2030" y="363" class="zone-title" fill="#78350F">Qwen Cloud</text>
+  <text x="2030" y="391" class="zone-sub" fill="#92400E">DashScope international API</text>
+
+  <rect x="1800" y="454" width="492" height="150" rx="20" fill="#FFFFFF" stroke="#F5C16C" stroke-width="2"/>
+  <rect x="1824" y="478" width="54" height="54" rx="16" fill="#FEF3C7"/>
+  <path d="M1838 502H1864M1838 511H1858" stroke="#D97706" stroke-width="4" stroke-linecap="round"/>
+  <text x="1898" y="502" class="model">qwen3.7-plus</text>
+  <text x="1898" y="531" class="node-sub">reasoning + tool selection</text>
+  <text x="1824" y="571" class="small">Produces the structured proposal; never executes it</text>
+
+  <rect x="1800" y="638" width="236" height="130" rx="19" fill="#FFFFFF" stroke="#F5C16C" stroke-width="2"/>
+  <text x="1824" y="676" class="model" font-size="18">qwen3.6-flash</text>
+  <text x="1824" y="706" class="small">optional extraction /</text>
+  <text x="1824" y="731" class="small">poison classification</text>
+  <rect x="2056" y="638" width="236" height="130" rx="19" fill="#FFFFFF" stroke="#F5C16C" stroke-width="2"/>
+  <text x="2080" y="676" class="model" font-size="18">text-embedding-v4</text>
+  <text x="2080" y="706" class="small">1536-D query +</text>
+  <text x="2080" y="731" class="small">memory vectors</text>
+
+  <rect x="1800" y="802" width="492" height="126" rx="20" fill="#FFFFFF" stroke="#F5C16C" stroke-width="2"/>
+  <text x="1824" y="844" class="model">qwen3-rerank</text>
+  <text x="1824" y="876" class="node-sub">relevance scoring for memory candidates</text>
+  <text x="1824" y="904" class="tiny">DETERMINISTIC COSINE FALLBACK IF UNAVAILABLE</text>
+
+  <g transform="translate(1800 974)">
+    <rect width="492" height="104" rx="18" fill="#FFFBEB" stroke="#FDE68A"/>
+    <circle cx="34" cy="34" r="16" fill="#F59E0B"/>
+    <path d="M34 24V36M34 45V46" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round"/>
+    <text x="64" y="31" class="tiny" fill="#92400E">TRUSTED MODEL PROVIDER</text>
+    <text x="64" y="58" class="small" fill="#78350F">Receives incident context plus only</text>
+    <text x="64" y="82" class="small" fill="#78350F">eligible memory selected by the backend.</text>
+  </g>
+
+  <!-- External and cross-component flows -->
+  <path d="M326 504H414" class="arrow-blue"/>
+  <path d="M402 496L414 504L402 512" fill="none" stroke="#2563EB" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <g transform="translate(327 462)">
+    <rect width="86" height="26" rx="13" fill="#FFFFFF" stroke="#BFDBFE"/>
+    <text x="43" y="18" text-anchor="middle" class="tiny" fill="#1D4ED8">WEB :80</text>
+  </g>
+
+  <path d="M760 486H824" class="arrow-blue-bi"/>
+  <path d="M812 478L824 486L812 494" fill="none" stroke="#2563EB" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <g transform="translate(761 443)">
+    <rect width="62" height="27" rx="13.5" fill="#FFFFFF" stroke="#BFDBFE"/>
+    <text x="31" y="18" text-anchor="middle" class="tiny" fill="#1D4ED8">REST</text>
+  </g>
+  <text x="792" y="532" text-anchor="middle" class="tiny" fill="#1D4ED8">SSE</text>
+
+  <path d="M1210 672H1244" class="inner-arrow"/>
+  <path d="M1234 665L1244 672L1234 679" fill="none" stroke="#64748B" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="1227" y="657" text-anchor="middle" class="tiny">CALL</text>
+  <path d="M1038 758V800" class="inner-arrow"/>
+  <path d="M1031 790L1038 800L1045 790" fill="none" stroke="#64748B" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="1060" y="786" class="tiny">RECALL</text>
+  <path d="M1417 758V800" class="inner-arrow"/>
+  <path d="M1410 790L1417 800L1424 790" fill="none" stroke="#64748B" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <path d="M866 928H760" class="arrow-blue-bi"/>
+  <path d="M772 920L760 928L772 936" fill="none" stroke="#2563EB" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <g transform="translate(758 874)">
+    <rect width="107" height="28" rx="14" fill="#FFFFFF" stroke="#A7F3D0"/>
+    <text x="53.5" y="19" text-anchor="middle" class="tiny" fill="#047857">SQL + VECTOR</text>
+  </g>
+  <text x="812" y="970" text-anchor="middle" class="tiny" fill="#047857">runs · memories</text>
+
+  <path d="M1508 584V550C1508 530 1525 519 1545 519H1750" fill="none" stroke="#D97706" stroke-width="4" stroke-dasharray="11 9" stroke-linecap="round"/>
+  <path d="M1738 511L1750 519L1738 527" fill="none" stroke="#D97706" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <g transform="translate(1588 479)">
+    <rect width="144" height="28" rx="14" fill="#FFFBEB" stroke="#FDE68A"/>
+    <text x="72" y="19" text-anchor="middle" class="tiny" fill="#A16207">CHAT + TOOLS</text>
+  </g>
+
+  <path d="M1590 885H1695C1720 885 1732 866 1732 844V704C1732 689 1740 685 1750 685" fill="none" stroke="#D97706" stroke-width="4" stroke-dasharray="11 9" stroke-linecap="round"/>
+  <path d="M1738 677L1750 685L1738 693" fill="none" stroke="#D97706" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <g transform="translate(1605 841)">
+    <rect width="123" height="28" rx="14" fill="#FFFBEB" stroke="#FDE68A"/>
+    <text x="61.5" y="19" text-anchor="middle" class="tiny" fill="#A16207">EMBEDDING</text>
+  </g>
+  <path d="M1590 950H1708C1734 950 1746 930 1750 882" fill="none" stroke="#D97706" stroke-width="4" stroke-dasharray="11 9" stroke-linecap="round"/>
+  <path d="M1738 874L1750 882L1738 890" fill="none" stroke="#D97706" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <g transform="translate(1608 917)">
+    <rect width="104" height="28" rx="14" fill="#FFFBEB" stroke="#FDE68A"/>
+    <text x="52" y="19" text-anchor="middle" class="tiny" fill="#A16207">RERANK</text>
+  </g>
+
+  <path d="M1100 1090V1054" class="arrow-mint"/>
+  <path d="M1092 1066L1100 1054L1108 1066" fill="none" stroke="#059669" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <g transform="translate(941 1055)">
+    <rect width="145" height="27" rx="13.5" fill="#ECFDF5" stroke="#A7F3D0"/>
+    <text x="72.5" y="18" text-anchor="middle" class="tiny" fill="#047857">SAFE WRITE ONLY</text>
+  </g>
+  <path d="M1015 542V584" class="inner-arrow"/>
+  <path d="M1008 574L1015 584L1022 574" fill="none" stroke="#64748B" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M1518 542V584" class="inner-arrow"/>
+  <path d="M1511 574L1518 584L1525 574" fill="none" stroke="#64748B" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Bottom invariant strip -->
+  <text x="74" y="1334" class="eyebrow" fill="#475569">ENFORCED SYSTEM INVARIANTS</text>
+  <g transform="translate(72 1360)" filter="url(#softShadow)">
+    <rect width="540" height="105" rx="19" fill="#FFFFFF" stroke="#D7E0ED"/>
+    <circle cx="43" cy="52" r="23" fill="#EDE9FE"/>
+    <path d="M34 52L41 59L54 43" fill="none" stroke="#7C3AED" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="82" y="43" class="chip-title">Backend owns trust</text>
+    <text x="82" y="69" class="chip-sub">Public callers cannot assign trusted provenance,</text>
+    <text x="82" y="90" class="chip-sub">authority, internal status, or validation state.</text>
+  </g>
+  <g transform="translate(636 1360)" filter="url(#softShadow)">
+    <rect width="540" height="105" rx="19" fill="#FFFFFF" stroke="#D7E0ED"/>
+    <circle cx="43" cy="52" r="23" fill="#CCFBF1"/>
+    <path d="M31 53L39 61L56 42" fill="none" stroke="#0F766E" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="82" y="43" class="chip-title">Recall is fail-closed</text>
+    <text x="82" y="69" class="chip-sub">Poisoned, stale, expired, future-dated, and</text>
+    <text x="82" y="90" class="chip-sub">cross-tenant memories never enter the prompt.</text>
+  </g>
+  <g transform="translate(1200 1360)" filter="url(#softShadow)">
+    <rect width="540" height="105" rx="19" fill="#FFFFFF" stroke="#D7E0ED"/>
+    <circle cx="43" cy="52" r="23" fill="#FFEDD5"/>
+    <path d="M43 38V54M43 65V66" stroke="#EA580C" stroke-width="4" stroke-linecap="round"/>
+    <text x="82" y="43" class="chip-title">Human remains in control</text>
+    <text x="82" y="69" class="chip-sub">Qwen proposes; the operator decides; simulation</text>
+    <text x="82" y="90" class="chip-sub">screens predicted outcomes but executes nothing.</text>
+  </g>
+  <g transform="translate(1764 1360)" filter="url(#softShadow)">
+    <rect width="564" height="105" rx="19" fill="#FFFFFF" stroke="#D7E0ED"/>
+    <circle cx="43" cy="52" r="23" fill="#DBEAFE"/>
+    <path d="M32 53L40 61L56 42" fill="none" stroke="#2563EB" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="82" y="43" class="chip-title">Judge evidence is state-derived</text>
+    <text x="82" y="69" class="chip-sub">PASS / FAIL, memory IDs, and lifecycle states come</text>
+    <text x="82" y="90" class="chip-sub">from backend workflow results—not hardcoded UI claims.</text>
+  </g>
+</svg>
