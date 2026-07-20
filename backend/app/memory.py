@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import math
 import uuid
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
@@ -434,16 +436,42 @@ def _lexical_rerank(
     query_text: str,
     memories: list[MemoryRecord],
 ) -> dict[uuid.UUID, float]:
-    """Deterministic lexical fallback when no embedding/rerank signal is available."""
-    query_tokens = set(_content_tokens(query_text))
+    """Candidate-relative BM25 fallback when no embedding/rerank signal is available.
+
+    Scores each candidate memory with BM25 over the query tokens. Longer
+    documents are length-normalised, and query terms that do not appear in any
+    candidate do not pollute the score. This keeps the correct procedure ahead
+    of short distractors such as the blue-logo memory.
+    """
+    query_tokens = _content_tokens(query_text)
+    doc_tokens = [_content_tokens(m.content) for m in memories]
+
+    N = len(memories)
+    if not query_tokens or N == 0 or not any(doc_tokens):
+        return {m.id: 0.0 for m in memories}
+
+    avgdl = sum(len(d) for d in doc_tokens) / N
+    df = Counter()
+    for dt in doc_tokens:
+        df.update(set(dt))
+
+    k1 = 1.2
+    b = 0.75
     scores: dict[uuid.UUID, float] = {}
-    for m in memories:
-        content_tokens = set(_content_tokens(m.content))
-        if not content_tokens:
+    for m, dt in zip(memories, doc_tokens):
+        if not dt:
             scores[m.id] = 0.0
             continue
-        overlap = len(query_tokens & content_tokens)
-        scores[m.id] = overlap / max(len(content_tokens), 1)
+        score = 0.0
+        doc_len = len(dt)
+        for t in query_tokens:
+            f = dt.count(t)
+            if f == 0:
+                continue
+            idf = math.log((N - df[t] + 0.5) / (df[t] + 0.5) + 1)
+            denom = f + k1 * (1 - b + b * doc_len / avgdl)
+            score += idf * f * (k1 + 1) / denom
+        scores[m.id] = score
     return scores
 
 
@@ -511,10 +539,19 @@ async def retrieve_and_pack(
     # Apply a calibrated relevance gate before utility scoring and MMR.
     # Active memories that are off-topic are filtered out; their lifecycle status is unchanged.
     # Operator policies are always retained because they constrain which actions are acceptable.
+    max_relevance = max(relevance.values(), default=0.0)
+    if rerank_mode == "lexical" and max_relevance > 0:
+        # BM25 scores are unbounded and depend on the candidate set; use a
+        # relative floor so only memories close to the top-scoring candidate
+        # proceed, while still respecting the absolute threshold.
+        lexical_floor = max(relevance_threshold, 0.6 * max_relevance)
+    else:
+        lexical_floor = relevance_threshold
+
     passed_ids = {
         m.id
         for m in candidates
-        if relevance.get(m.id, 0.0) >= relevance_threshold or m.type == "policy"
+        if relevance.get(m.id, 0.0) >= lexical_floor or m.type == "policy"
     }
     passed = [m for m in candidates if m.id in passed_ids]
     filtered = [m for m in candidates if m.id not in passed_ids]
@@ -556,6 +593,7 @@ async def retrieve_and_pack(
         "filter_reasons": filter_reasons,
         "rerank_mode": rerank_mode,
         "relevance_threshold": relevance_threshold,
+        "effective_threshold": round(lexical_floor, 4),
         "used_tokens": used_tokens,
         "budget": budget,
     }

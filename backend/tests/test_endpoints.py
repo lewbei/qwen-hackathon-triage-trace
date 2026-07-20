@@ -9,6 +9,7 @@ from backend.app import demo as demo_module
 from backend.app import main as main_module
 from backend.app.config import settings
 from backend.app.main import app
+from backend.app.memory import retrieve_and_pack
 from backend.app.models import MemoryRecord, RunRecord
 from backend.app.schemas import ActionProposal, Alert
 
@@ -445,7 +446,7 @@ async def test_demo_scenarios_catalog_lists_three_scenarios(db_session):
 
 @pytest.mark.asyncio
 async def test_demo_setup_seeds_each_scenario(db_session, monkeypatch):
-    """Every server-owned scenario must seed old=superseded, new=simulated_safe, poison=quarantined."""
+    """Every server-owned scenario seeds the expected lifecycle states and scenario-specific evidence."""
     from unittest.mock import AsyncMock
 
     from sqlalchemy import select
@@ -455,6 +456,12 @@ async def test_demo_setup_seeds_each_scenario(db_session, monkeypatch):
         "backend.app.demo_scenarios.qwen.embed",
         AsyncMock(return_value=[[0.0] * 1536, [0.0] * 1536, [0.0] * 1536]),
     )
+    monkeypatch.setattr(
+        "backend.app.memory.qwen.rerank",
+        AsyncMock(return_value=[]),
+    )
+
+    tenants: list[str] = []
 
     for scenario_id in (
         "cart-redis-latency",
@@ -469,6 +476,7 @@ async def test_demo_setup_seeds_each_scenario(db_session, monkeypatch):
         assert response.status_code == 200, f"{scenario_id} setup failed"
         result = response.json()
         tenant = result["alert"]["tenant"]
+        tenants.append(tenant)
 
         rows = list(
             (
@@ -486,3 +494,29 @@ async def test_demo_setup_seeds_each_scenario(db_session, monkeypatch):
         assert len(old) == 1 and old[0].status == "superseded"
         assert len(new) == 1 and new[0].status == "simulated_safe"
         assert len(poison) == 1 and poison[0].status == "quarantined"
+
+        packed, _, _, meta = await retrieve_and_pack(
+            db_session,
+            tenant=tenant,
+            scope=result["service"],
+            query_text=result["alert"]["context"],
+            query_embedding=None,
+            budget=800,
+        )
+        packed_ids = {m.id for m in packed}
+
+        if scenario_id == "notifications-queue-backlog":
+            distractor = [m for m in rows if "logo should be changed to blue" in m.content]
+            assert len(distractor) == 1 and distractor[0].status == "active"
+            assert new[0].id in packed_ids, "correct notification procedure should be recalled"
+            assert distractor[0].id not in packed_ids, "unrelated logo memory should be filtered"
+
+        if scenario_id == "payments-psp-failure":
+            policy = [m for m in rows if m.type == "policy"]
+            assert len(policy) == 1 and policy[0].status == "active"
+            assert policy[0].id in packed_ids, "payment policy must be retained in the context"
+            assert new[0].id in packed_ids, "correct payment procedure should be recalled"
+
+        assert meta["rerank_mode"] == "lexical"
+
+    assert len(set(tenants)) == 3, "each setup call must create an isolated tenant"

@@ -1,10 +1,13 @@
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from sqlalchemy import select
 
+from backend.app.demo import _seed_approved_procedure
 from backend.app.memory import ACTIVE_STATUSES, create_memory, retrieve_and_pack
 from backend.app.models import MemoryRecord
+from backend.app.schemas import Alert
 
 
 @pytest.mark.asyncio
@@ -210,3 +213,60 @@ async def test_retrieve_and_pack_retains_policies_regardless_of_relevance(db_ses
     packed_ids = [m.id for m in packed]
     assert policy.id in packed_ids, "policy must be retained even with low lexical relevance"
     assert unrelated.id not in packed_ids, "off-topic procedure should be filtered"
+
+
+@pytest.mark.asyncio
+async def test_lexical_fallback_ranks_correct_procedure_above_blue_logo_distractor(db_session):
+    """TF-IDF lexical fallback must rank the real procedure above the unrelated distractor."""
+    tenant = "test-lexical-distractor"
+    scope = "notification-service"
+    subject = "queue_backlog"
+
+    correct_alert = Alert(
+        tenant=tenant,
+        service=scope,
+        symptom="Message queue backlog above 400,000 messages after upstream outage",
+        context="Queue depth is over 400,000 messages after an upstream outage and error rate is climbing.",
+        severity="critical",
+    )
+    correct = await _seed_approved_procedure(
+        db_session,
+        tenant=tenant,
+        alert=correct_alert,
+        action="Scale the notification workers and requeue failed messages",
+        evidence="Scaling workers and requeueing failed messages is the approved recovery procedure.",
+        source_timestamp=datetime.now(timezone.utc),
+        embedding=[0.0] * 1536,
+        subject=subject,
+        predicate="remediation",
+    )
+
+    distractor = await create_memory(
+        db_session,
+        tenant=tenant,
+        provenance="operator",
+        type="procedure",
+        scope=scope,
+        subject="irrelevant_metric",
+        predicate="remediation",
+        content="The notification service logo should be changed to blue.",
+        source_authority=90,
+        embedding=[0.0] * 1536,
+        auto_embed=False,
+    )
+
+    with patch("backend.app.memory.qwen.rerank", new_callable=AsyncMock) as mock_rerank:
+        mock_rerank.return_value = []
+        packed, omitted, rejected, meta = await retrieve_and_pack(
+            db_session,
+            tenant=tenant,
+            scope=scope,
+            query_text=correct_alert.context,
+            query_embedding=None,
+            budget=800,
+        )
+
+    assert meta["rerank_mode"] == "lexical"
+    packed_ids = {m.id for m in packed}
+    assert correct.id in packed_ids, "correct procedure should be recalled"
+    assert distractor.id not in packed_ids, "blue-logo distractor should be filtered out"

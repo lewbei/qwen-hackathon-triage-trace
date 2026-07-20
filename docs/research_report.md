@@ -92,7 +92,7 @@ TriageTrace already implements this: every remediation is a **proposal** pending
 **Gaps / opportunities to score higher:**
 
 1. **Custom Qwen skills / MCP integration.** The Qwen-Agent framework supports MCP servers and custom skills. Exposing TriageTrace's evidence tools (`inspect_metrics`, `read_current_runbook`, `apply_remediation`) as an MCP server would be a strong signal of "sophisticated Qwen Cloud use." ([Qwen-Agent MCP docs](https://qwenlm-qwen-agent.mintlify.app/guides/mcp-integration))
-2. **Real rerank with `qwen3-rerank`.** Currently there is a rerank fallback. Switching to the actual Alibaba Cloud `qwen3-rerank` endpoint would be more sophisticated. ([Alibaba Cloud Text Rerank API](https://help.aliyun.com/en/model-studio/text-rerank-api))
+2. **`qwen3-rerank` integration.** The retrieval pipeline calls the Alibaba Cloud `qwen3-rerank` endpoint (`/api/v1/services/rerank`) and automatically falls back to TF-IDF cosine similarity when the service is unavailable or rate-limited. ([Alibaba Cloud Text Rerank API](https://help.aliyun.com/en/model-studio/text-rerank-api))
 3. **Async streaming status endpoint.** Incident agents feel more real-time if the dashboard polls or uses SSE for run progress.
 4. **Cache embeddings / parallelize tool calls** to show performance optimization.
 

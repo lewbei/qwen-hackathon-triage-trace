@@ -90,13 +90,41 @@ NEGATIONS = {"not", "no", "never", "without", "dont", "don't", "doesnt", "doesn'
 TOKEN_RE = re.compile(r"[a-z0-9]+")
 CLAUSE_RE = re.compile(r"(?:[,;]|\b(?:and|or|then|but)\b)", re.IGNORECASE)
 
+_CONTRACTIONS = {
+    "don't": "do not",
+    "doesn't": "does not",
+    "didn't": "did not",
+    "can't": "cannot",
+    "won't": "will not",
+    "wouldn't": "would not",
+    "shouldn't": "should not",
+    "couldn't": "could not",
+}
+_CONTRACTION_RE = re.compile(
+    r"\b(" + "|".join(re.escape(c) for c in _CONTRACTIONS) + r")\b",
+    re.IGNORECASE,
+)
+
+
+def _expand_contractions(text: str) -> str:
+    """Expand common contractions so negation detection sees 'not' and 'cannot'."""
+
+    def _replace(match: re.Match[str]) -> str:
+        return _CONTRACTIONS[match.group(0).lower()]
+
+    return _CONTRACTION_RE.sub(_replace, text)
+
 
 def _content_tokens(text: str) -> list[str]:
-    return [t for t in TOKEN_RE.findall(text.lower()) if t not in STOPWORDS and t not in NEGATIONS]
+    return [
+        t
+        for t in TOKEN_RE.findall(_expand_contractions(text).lower())
+        if t not in STOPWORDS and t not in NEGATIONS
+    ]
 
 
 def _all_tokens(text: str) -> list[str]:
-    return TOKEN_RE.findall(text.lower())
+    return TOKEN_RE.findall(_expand_contractions(text).lower())
 
 
 def _split_clauses(text: str) -> list[list[str]]:

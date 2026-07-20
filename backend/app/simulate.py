@@ -37,7 +37,7 @@ def _apply_benefit(post: dict[str, Any], service: str, matched_operations: list[
 
     if service == "notification-service" or (queue_depth > 0 and "requeue" in action_lower):
         if "requeue" in action_lower or "scale" in action_lower:
-            post["queue_depth"] = max(0.0, queue_depth * 0.2)
+            post["queue_depth"] = max(0.0, queue_depth * 0.05)
             post["cpu"] = _clamp(cpu + 0.15)
             post["memory"] = _clamp(memory + 0.05)
             post["errors"] = _clamp(errors * 0.5)
@@ -47,14 +47,18 @@ def _apply_benefit(post: dict[str, Any], service: str, matched_operations: list[
         if service == "cart-service" and ("scale redis" in action_lower or "scale" in action_lower):
             post["errors"] = _clamp(errors * 0.2)
             post["cpu"] = _clamp(cpu + 0.1)
-            return "scaling Redis/workers addresses checkout latency and drops error rate"
+            post["checkout_failures"] = max(0, float(post.get("checkout_failures", 0)) * 0.1)
+            post["latency_p99"] = max(0, float(post.get("latency_p99", 0)) * 0.5)
+            return "scaling Redis and restarting workers addresses checkout latency and drops error rate"
         if service == "cart-service" and "restart" in action_lower and "worker" in action_lower:
             post["errors"] = _clamp(errors * 0.3)
             post["cpu"] = _clamp(cpu + 0.1)
+            post["checkout_failures"] = max(0, float(post.get("checkout_failures", 0)) * 0.2)
+            post["latency_p99"] = max(0, float(post.get("latency_p99", 0)) * 0.7)
             return "restarting healthy workers addresses transient pod issues"
         if service == "payment-service" and ("verify" in action_lower or "failover" in action_lower or "switch" in action_lower):
             post["errors"] = _clamp(errors * 0.2)
-            post["psp_latency_p99"] = max(0, float(post.get("psp_latency_p99", 0)) * 0.5)
+            post["psp_latency_p99"] = max(0, float(post.get("psp_latency_p99", 0)) * 0.2)
             post["payment_timeouts"] = max(0, float(post.get("payment_timeouts", 0)) * 0.2)
             post["psp_available"] = True
             return "verifying connectivity and failing over to the backup PSP restores payment flow"
@@ -93,19 +97,28 @@ def _apply_harm(post: dict[str, Any], forbidden_matches: list[str]) -> str:
     return "action contains a forbidden operation and is predicted to worsen reliability"
 
 
+def _metric_penalty(metrics: dict[str, Any], key: str, threshold: float, weight: float) -> float:
+    """Return a weighted [0,1] penalty for ``value/threshold``, capped at 1."""
+    value = float(metrics.get(key, 0.0))
+    if threshold <= 0 or value <= 0:
+        return 0.0
+    return min(value / threshold, 1.0) * weight
+
+
 def _health_score(metrics: dict[str, Any]) -> float:
-    """Higher is better. Penalize errors, resource pressure, queue depth, and PSP health."""
-    errors = float(metrics.get("errors", 0.0))
-    cpu = float(metrics.get("cpu", 0.0))
-    memory = float(metrics.get("memory", 0.0))
-    queue_depth = float(metrics.get("queue_depth", 0.0))
-    psp_latency = float(metrics.get("psp_latency_p99", 0.0))
-    payment_timeouts = float(metrics.get("payment_timeouts", 0.0))
-    psp_available = metrics.get("psp_available", True)
-    penalty = 0.0001 * psp_latency + 0.01 * payment_timeouts
-    if not psp_available:
-        penalty += 0.3
-    return 1.0 - errors - 0.3 * cpu - 0.2 * memory - 0.0002 * queue_depth - penalty
+    """Higher is better. Normalize each metric against a service threshold and clamp to [0, 1]."""
+    score = 1.0
+    score -= _metric_penalty(metrics, "errors", 0.1, 0.25)
+    score -= _metric_penalty(metrics, "cpu", 0.8, 0.15)
+    score -= _metric_penalty(metrics, "memory", 0.75, 0.1)
+    score -= _metric_penalty(metrics, "queue_depth", 100000, 0.2)
+    score -= _metric_penalty(metrics, "psp_latency_p99", 2000, 0.1)
+    score -= _metric_penalty(metrics, "payment_timeouts", 20, 0.1)
+    score -= _metric_penalty(metrics, "checkout_failures", 30, 0.1)
+    score -= _metric_penalty(metrics, "latency_p99", 1500, 0.1)
+    if not metrics.get("psp_available", True):
+        score -= 0.2
+    return _clamp(score)
 
 
 def simulate_action(service: str, action: str, metrics: dict[str, Any] | None = None) -> dict[str, Any]:

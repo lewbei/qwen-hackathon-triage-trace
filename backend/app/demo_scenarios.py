@@ -262,7 +262,10 @@ async def seed_demo_scenario(
         tenant=scenario_tenant,
         alert=alert,
         action=action_texts["new_action"],
-        evidence=f"Updated approved-and-simulated procedure for {service} {subject}.",
+        evidence=(
+            f"Updated approved-and-simulated procedure for {service} {subject}. "
+            f"{action_texts['new_text']}"
+        ),
         source_timestamp=_days_ago(2),
         embedding=embeddings[1],
         subject=subject,

@@ -110,6 +110,34 @@ def test_action_rules_partial_payment_action_fails():
     assert any("fail over to backup psp" in rc for rc in result["reason_codes"])
 
 
+def test_action_rules_contraction_negation_dont():
+    result = action_rules.evaluate_action(
+        "Don't delete carts; scale Redis and restart cart workers", "cart_redis_recovery"
+    )
+    assert result["passed"] is True
+    assert result["forbidden_matches"] == []
+
+
+def test_action_rules_contraction_negation_doesnt():
+    result = action_rules.evaluate_action(
+        "It doesn't delete the queue; scale notification workers and requeue failed messages",
+        "notification_backlog_recovery",
+    )
+    assert result["passed"] is True
+    assert result["forbidden_matches"] == []
+
+
+def test_action_rules_contraction_negation_cant_cannot():
+    assert action_rules.evaluate_action(
+        "Can't refund everything; verify PSP connectivity and fail over to backup PSP",
+        "payment_psp_failover",
+    )["passed"] is True
+    assert action_rules.evaluate_action(
+        "Cannot bypass payment checks; verify PSP connectivity and fail over to backup PSP",
+        "payment_psp_failover",
+    )["passed"] is True
+
+
 @pytest.mark.asyncio
 async def test_winning_scenario_verdict(db_session):
     with patch("backend.app.demo.qwen.embed", new_callable=AsyncMock) as mock_embed, \
