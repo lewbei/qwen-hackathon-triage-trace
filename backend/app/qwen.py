@@ -111,7 +111,7 @@ class QwenGateway:
                 dimensions=dimensions,
             )
         except APIError as exc:
-            # Fall back to v3 if the primary model is unavailable or out of quota.
+            # Fall back to the configured fallback model if the primary one is unavailable or out of quota.
             msg = str(exc).lower()
             model_errors = ("not found", "not supported", "does not exist")
             quota_errors = ("out of quota", "quota exceeded", "insufficient quota", "insufficient_quota")
@@ -119,14 +119,24 @@ class QwenGateway:
                 exc.code in ("model_not_found", "invalid_model", "insufficient_quota")
                 or any(phrase in msg for phrase in model_errors + quota_errors)
             ):
+                # Some fallback models (e.g. text-embedding-v3) cap dimensions at 1024.
+                fallback_dims = min(
+                    dimensions,
+                    settings.qwen_embedding_fallback_dimensions,
+                )
                 response = await self.embedding_client.embeddings.create(
                     input=texts,
                     model=settings.qwen_embedding_fallback_model,
-                    dimensions=dimensions,
+                    dimensions=fallback_dims,
                 )
             else:
                 raise
-        return [item.embedding for item in response.data]
+
+        # Pad shorter fallback vectors with zeros so the DB dimension stays constant.
+        return [
+            item.embedding + [0.0] * (dimensions - len(item.embedding))
+            for item in response.data
+        ]
 
     async def rerank(
         self,

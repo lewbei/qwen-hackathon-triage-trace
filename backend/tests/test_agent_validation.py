@@ -470,7 +470,9 @@ async def test_embed_falls_back_to_v3_when_v4_unavailable_or_out_of_quota(error_
             err = APIError(error_msg, request=None, body=None)
             err.code = error_code
             raise err
-        return type("Resp", (), {"data": [type("Item", (), {"embedding": [0.1] * dimensions})()]})()
+        # The fallback model may cap dimensions (e.g. text-embedding-v3 max 1024).
+        effective_dims = min(dimensions, settings.qwen_embedding_fallback_dimensions)
+        return type("Resp", (), {"data": [type("Item", (), {"embedding": [0.1] * effective_dims})()]})()
 
     gateway = QwenGateway(api_key="test-key")
     gateway.embedding_client = type(
@@ -484,4 +486,5 @@ async def test_embed_falls_back_to_v3_when_v4_unavailable_or_out_of_quota(error_
     assert len(calls) == 2
     assert calls[0]["model"] == settings.qwen_embedding_model
     assert calls[1]["model"] == settings.qwen_embedding_fallback_model
-    assert result == [[0.1] * 1536]
+    assert calls[1]["dimensions"] == settings.qwen_embedding_fallback_dimensions
+    assert result == [[0.1] * settings.qwen_embedding_fallback_dimensions + [0.0] * (1536 - settings.qwen_embedding_fallback_dimensions)]
