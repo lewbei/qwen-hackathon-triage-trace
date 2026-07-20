@@ -127,9 +127,9 @@ const INCIDENT: Incident = {
 const ALERT: Alert = {
   tenant: TENANT,
   service: SERVICE,
-  symptom: 'High checkout failure rate and slow response times',
+  symptom: 'Redis timeout causing high checkout failure rate',
   severity: 'critical',
-  context: 'Redis latency spiked and checkout failures exceeded 40 per minute.',
+  context: 'Logs show ETIMEDOUT redis-cart:6379. Last rollout: cart-2.3.1 (rolled_back). Checkout failures exceeded 40 per minute.',
 }
 
 function statusClass(status: string) {
