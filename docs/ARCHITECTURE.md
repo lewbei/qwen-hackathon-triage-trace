@@ -6,7 +6,7 @@ TriageTrace is a **temporal memory firewall for incident-response agents**. It w
 
 | Component | File | Responsibility |
 |---|---|---|
-| **React Dashboard** | `frontend/src/App.tsx` | Operator UI: trigger incidents, approve/reject proposals, inspect memory lens, view evaluation dashboard. |
+| **React Dashboard** | `frontend/src/JudgeDemo.tsx` (mounted by `App.tsx`) | Operator UI: trigger incidents, approve/reject proposals, inspect memory lens, view evaluation dashboard. |
 | **FastAPI Orchestrator** | `backend/app/main.py` | HTTP API, SSE streaming, skill registry, run lifecycle, memory CRUD. |
 | **Agent** | `backend/app/agent.py` | Runs the two-stage Qwen3.7-plus reasoning loop: tool reasoning → final proposal. Emits events for real-time streaming. |
 | **Memory Firewall** | `backend/app/memory.py` | Vector retrieval, rerank fallback, MMR diversity, utility scoring, token-budget packing, supersession, quarantine (MemoryGate). |

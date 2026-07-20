@@ -16,7 +16,7 @@ TriageTrace is now evaluated on three surfaces:
 || Poisoned log | 2 | Ignoring malicious instructions embedded in untrusted logs |
 || Irrelevant overload | 1 | Retrieving the correct memory among five irrelevant observations |
 
-Metrics: correct-action accuracy, policy compliance, latency, tokens, poison/stale recall rates, temporal correctness, and irrelevant-memory intrusion. The latest live run with `qwen3-rerank` is **stateless 23.1% → memory 84.6% accuracy**.
+Metrics: correct-action accuracy, policy compliance, latency, tokens, poison/stale recall rates, temporal correctness, and irrelevant-memory intrusion. The latest live run is **stateless 23.1% → memory 84.6% accuracy**.
 
 2. **AgentSecurityBench (ASB) memory-poisoning gate** (`backend/evaluations/benchmarks/asb_memorygate.py`):
 

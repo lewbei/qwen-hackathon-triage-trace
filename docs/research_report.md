@@ -109,7 +109,7 @@ TriageTrace already implements this: every remediation is a **proposal** pending
 
 **Gaps / opportunities:**
 
-1. **Generate an architecture diagram** (`docs/architecture.png`) and a short `ARCHITECTURE.md`.
+1. **Keep `docs/architecture.png` in sync** with `docs/architecture.mmd` and expand `ARCHITECTURE.md`.
 2. **Add an MCP manifest** or OpenAPI spec showing custom skills.
 3. **Show modularity** by making the memory firewall a reusable package (it already mostly is in `backend/app/memory.py`).
 
@@ -150,7 +150,7 @@ TriageTrace already implements this: every remediation is a **proposal** pending
 
 ### P0 (submission eligibility + judging)
 
-1. **Deploy on Alibaba Cloud** (ECS + RDS pgvector) and record proof of deployment.
+1. **Deploy on Alibaba Cloud** (ECS with local PostgreSQL/pgvector container) and record proof of deployment.
 2. **Produce a 3-minute public demo video** with a clear memory-firewall "wow" moment.
 3. **Render `docs/architecture.png`** from `docs/architecture.mmd` and embed in README.
 4. **Add `ARCHITECTURE.md`** explaining the memory firewall design with citations to the memory-poisoning research.
@@ -171,7 +171,7 @@ TriageTrace already implements this: every remediation is a **proposal** pending
 
 ## 5. One-sentence value proposition
 
-> TriageTrace is the first open-source memory layer for incident-response agents that remembers operator-approved (and, where available, outcome-verified) feedback, hard-forgets stale runbooks, and quarantines poisoned instructions before they can be recalled — turning a production safety risk into a measurable +61.5% accuracy improvement (stateless 23.1% → memory 84.6%).
+> TriageTrace is the first open-source memory layer for incident-response agents that remembers operator-approved, simulator-screened feedback, hard-forgets stale runbooks, and quarantines poisoned instructions before they can be recalled — turning a production safety risk into a measurable +61.5% accuracy improvement (stateless 23.1% → memory 84.6%).
 
 ## 6. Sources
 

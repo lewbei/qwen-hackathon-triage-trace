@@ -10,7 +10,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.config import settings
-from backend.app.memory import retrieve_and_pack
+from backend.app.memory import redact, retrieve_and_pack
 from backend.app.models import MemoryRecord
 from backend.app.qwen import qwen
 from backend.app.schemas import ActionProposal, Alert, Mode, RunEvent
@@ -106,6 +106,9 @@ async def run_incident(
     mode: Mode,
     event_queue: asyncio.Queue | None = None,
 ) -> dict[str, Any]:
+    # Redact sensitive patterns from the incident context before any model call or persistence.
+    alert = alert.model_copy(update={"context": redact(alert.context)})
+
     run_id = str(uuid.uuid4())
     events: list[RunEvent] = []
 
@@ -211,7 +214,7 @@ async def run_incident(
         messages.append({
             "role": "tool",
             "tool_call_id": first["tool_calls"][i]["id"],
-            "content": json.dumps(tr["result"]),
+            "content": redact(json.dumps(tr["result"])),
         })
 
     messages.append({

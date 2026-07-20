@@ -52,5 +52,5 @@ curl -s http://localhost/api/health
 
 ## Track fit
 
-- **Primary track:** Track 4 — Autopilot Agent.
+- **Primary track:** Track 1 — MemoryAgent.
 - **Core safety claims:** human approval gate, memory-driven reasoning, poison quarantine, temporal supersession.
