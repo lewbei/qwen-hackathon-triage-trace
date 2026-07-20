@@ -124,3 +124,89 @@ async def test_retrieve_and_pack_uses_cosine_fallback_when_reranker_fails(db_ses
 
     assert meta["packed"] >= 1
     assert any(m.id == target.id for m in packed), "cosine fallback should recall the target memory"
+    assert meta["rerank_mode"] == "cosine"
+
+
+@pytest.mark.asyncio
+async def test_retrieve_and_pack_uses_lexical_fallback_when_embeddings_unavailable(db_session):
+    """If both reranker and cosine signals are absent, the pipeline must fall back to lexical overlap."""
+    tenant = "test-lexical-fallback"
+    scope = "lexical-service"
+
+    target = await create_memory(
+        db_session,
+        tenant=tenant,
+        provenance="simulation",
+        type="procedure",
+        scope=scope,
+        subject="checkout_failures",
+        predicate="remediation",
+        content="Scale the Redis cache and restart the cart workers.",
+        source_authority=80,
+        embedding=[0.0] * 1536,
+        auto_embed=False,
+    )
+
+    with patch("backend.app.memory.qwen.rerank", new_callable=AsyncMock) as mock_rerank:
+        mock_rerank.return_value = []
+        packed, omitted, rejected, meta = await retrieve_and_pack(
+            db_session,
+            tenant=tenant,
+            scope=scope,
+            query_text="scale redis and restart cart workers",
+            query_embedding=None,
+            budget=800,
+        )
+
+    assert meta["rerank_mode"] == "lexical"
+    assert any(m.id == target.id for m in packed), "lexical fallback should recall the target memory"
+
+
+@pytest.mark.asyncio
+async def test_retrieve_and_pack_retains_policies_regardless_of_relevance(db_session):
+    """Operator policies must bypass the relevance gate and be packed first."""
+    tenant = "test-policy-retention"
+    scope = "policy-service"
+
+    policy = await create_memory(
+        db_session,
+        tenant=tenant,
+        provenance="operator",
+        type="policy",
+        scope=scope,
+        subject="checkout_failures",
+        predicate="policy",
+        content="Never restart the database or delete pending carts.",
+        source_authority=100,
+        embedding=[0.0] * 1536,
+        auto_embed=False,
+    )
+
+    unrelated = await create_memory(
+        db_session,
+        tenant=tenant,
+        provenance="simulation",
+        type="procedure",
+        scope=scope,
+        subject="checkout_failures",
+        predicate="remediation",
+        content="Scale the Redis cache and restart the cart workers.",
+        source_authority=80,
+        embedding=[0.0] * 1536,
+        auto_embed=False,
+    )
+
+    with patch("backend.app.memory.qwen.rerank", new_callable=AsyncMock) as mock_rerank:
+        mock_rerank.return_value = []
+        packed, omitted, rejected, meta = await retrieve_and_pack(
+            db_session,
+            tenant=tenant,
+            scope=scope,
+            query_text="completely unrelated query about blue logos",
+            query_embedding=[1.0] * 1536,
+            budget=800,
+        )
+
+    packed_ids = [m.id for m in packed]
+    assert policy.id in packed_ids, "policy must be retained even with low lexical relevance"
+    assert unrelated.id not in packed_ids, "off-topic procedure should be filtered"

@@ -75,7 +75,7 @@ SCENARIO_DETAILS: dict[str, dict[str, Any]] = {
             "service": "notification-service",
             "title": "Notification queue backlog growing",
             "severity": "sev1",
-            "alert": "Notification queue backlog above 2500 after upstream outage",
+            "alert": "Notification queue backlog above 400,000 after upstream outage",
             "customerImpact": "Users are not receiving order confirmations and password resets.",
             "owner": "notifications-oncall",
             "constraints": [
@@ -92,8 +92,8 @@ SCENARIO_DETAILS: dict[str, dict[str, Any]] = {
         "alert": {
             "tenant": "",
             "service": "notification-service",
-            "symptom": "Notification queue backlog growing",
-            "context": "Queue depth is over 400,000 messages and error rate is climbing.",
+            "symptom": "Notification queue backlog above 400,000 messages",
+            "context": "Queue depth is over 400,000 messages after an upstream outage and error rate is climbing.",
             "severity": "critical",
         },
         "memorySubject": "queue_backlog",
@@ -176,7 +176,7 @@ def get_scenario(scenario_id: str) -> dict[str, Any]:
 def _scenario_content(scenario_id: str) -> dict[str, str]:
     if scenario_id == "cart-redis-latency":
         return {
-            "old_action": "Restart the cart workers to clear stuck processes",
+            "old_action": "Scale the Redis cache to warm state and restart the cart workers",
             "new_action": "Scale the Redis cache and restart the cart workers",
             "new_text": (
                 "When cart-service has high checkout failures after a Redis latency spike, "
@@ -190,7 +190,7 @@ def _scenario_content(scenario_id: str) -> dict[str, str]:
         }
     if scenario_id == "notifications-queue-backlog":
         return {
-            "old_action": "Scale the notification workers to clear the queue",
+            "old_action": "Scale the notification workers to clear the queue and requeue failed messages once capacity returns",
             "new_action": "Scale the notification workers and requeue failed messages",
             "new_text": (
                 "When the notification queue is backing up with failed messages, "
@@ -204,7 +204,7 @@ def _scenario_content(scenario_id: str) -> dict[str, str]:
         }
     if scenario_id == "payments-psp-failure":
         return {
-            "old_action": "Verify PSP connectivity and fail over to backup PSP",
+            "old_action": "Verify PSP connectivity via a health check and fail over to backup PSP",
             "new_action": "Verify PSP connectivity, fail over to backup PSP, queue asynchronously, and alert finance",
             "new_text": (
                 "When the payment service reports PSP timeouts and PSP availability is false, "
@@ -283,6 +283,43 @@ async def seed_demo_scenario(
         embedding=embeddings[2],
         auto_embed=False,
     )
+
+    # Add scenario-specific memories that demonstrate different firewall guarantees.
+    if scenario_id == "notifications-queue-backlog":
+        # An unrelated active memory in the same scope must be filtered by relevance.
+        await create_memory(
+            session,
+            tenant=scenario_tenant,
+            provenance="operator",
+            type="procedure",
+            scope=service,
+            subject="irrelevant_metric",
+            predicate=predicate,
+            content="The notification service logo should be changed to blue.",
+            source_timestamp=_days_ago(5),
+            valid_from=_days_ago(5),
+            embedding=[0.0] * 1536,
+            auto_embed=False,
+        )
+    elif scenario_id == "payments-psp-failure":
+        # An active operator policy must be retained and available for recall.
+        await create_memory(
+            session,
+            tenant=scenario_tenant,
+            provenance="operator",
+            type="policy",
+            scope=service,
+            subject=subject,
+            predicate="policy",
+            content=(
+                "During payment PSP timeouts and unavailability, never refund all transactions "
+                "or bypass payment checks; preserve the audit trail and alert finance."
+            ),
+            source_timestamp=_days_ago(5),
+            valid_from=_days_ago(5),
+            embedding=[0.0] * 1536,
+            auto_embed=False,
+        )
 
     result = {
         "id": scenario_id,

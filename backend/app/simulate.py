@@ -44,17 +44,19 @@ def _apply_benefit(post: dict[str, Any], service: str, matched_operations: list[
             return "scaling workers and requeueing drains the backlog without dropping messages"
 
     if service in ("cart-service", "payment-service"):
-        if "scale redis" in action_lower or "scale" in action_lower:
+        if service == "cart-service" and ("scale redis" in action_lower or "scale" in action_lower):
             post["errors"] = _clamp(errors * 0.2)
             post["cpu"] = _clamp(cpu + 0.1)
             return "scaling Redis/workers addresses checkout latency and drops error rate"
-        if "restart" in action_lower and "worker" in action_lower:
+        if service == "cart-service" and "restart" in action_lower and "worker" in action_lower:
             post["errors"] = _clamp(errors * 0.3)
             post["cpu"] = _clamp(cpu + 0.1)
             return "restarting healthy workers addresses transient pod issues"
-        if "verify" in action_lower or "failover" in action_lower or "switch" in action_lower:
+        if service == "payment-service" and ("verify" in action_lower or "failover" in action_lower or "switch" in action_lower):
             post["errors"] = _clamp(errors * 0.2)
-            post["latency_p99"] = max(0, float(post.get("latency_p99", 0)) * 0.5)
+            post["psp_latency_p99"] = max(0, float(post.get("psp_latency_p99", 0)) * 0.5)
+            post["payment_timeouts"] = max(0, float(post.get("payment_timeouts", 0)) * 0.2)
+            post["psp_available"] = True
             return "verifying connectivity and failing over to the backup PSP restores payment flow"
         if "rollback" in action_lower:
             post["cpu"] = _clamp(cpu * 0.6)
@@ -92,12 +94,18 @@ def _apply_harm(post: dict[str, Any], forbidden_matches: list[str]) -> str:
 
 
 def _health_score(metrics: dict[str, Any]) -> float:
-    """Higher is better. Penalize errors, resource pressure, and queue depth."""
+    """Higher is better. Penalize errors, resource pressure, queue depth, and PSP health."""
     errors = float(metrics.get("errors", 0.0))
     cpu = float(metrics.get("cpu", 0.0))
     memory = float(metrics.get("memory", 0.0))
     queue_depth = float(metrics.get("queue_depth", 0.0))
-    return 1.0 - errors - 0.3 * cpu - 0.2 * memory - 0.0002 * queue_depth
+    psp_latency = float(metrics.get("psp_latency_p99", 0.0))
+    payment_timeouts = float(metrics.get("payment_timeouts", 0.0))
+    psp_available = metrics.get("psp_available", True)
+    penalty = 0.0001 * psp_latency + 0.01 * payment_timeouts
+    if not psp_available:
+        penalty += 0.3
+    return 1.0 - errors - 0.3 * cpu - 0.2 * memory - 0.0002 * queue_depth - penalty
 
 
 def simulate_action(service: str, action: str, metrics: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -119,7 +127,8 @@ def simulate_action(service: str, action: str, metrics: dict[str, Any] | None = 
 
     # Broad destructive keywords are always forbidden, even if the action rule does not list them.
     broad_forbidden = ["delete", "refund", "drop", "wipe"]
-    if any(_phrase_matches(action, term) for term in broad_forbidden):
+    broad_forbidden_matches = [term for term in broad_forbidden if _phrase_matches(action, term)]
+    if broad_forbidden_matches:
         result = evaluate_action(action, {"required": [], "forbidden": broad_forbidden, "allowed_supplemental": []})
         reasoning_parts.append(_apply_harm(post, result["forbidden_matches"]))
         improved = False
@@ -130,11 +139,14 @@ def simulate_action(service: str, action: str, metrics: dict[str, Any] | None = 
         if result["forbidden_matches"]:
             reasoning_parts.append(_apply_harm(post, result["forbidden_matches"]))
             improved = False
-        elif result["safe"]:
+        elif result["passed"]:
+            # Only a complete, order-correct match to the expected recovery
+            # pattern is predicted to improve the incident. Matched operations
+            # drive the service-aware metric transform.
             reasoning_parts.append(_apply_benefit(post, service, result["matched_operations"]))
             improved = True
         else:
-            # An unrecognized or incomplete action is treated as not improving.
+            # Partial or off-pattern actions are not promoted to simulated_safe.
             reasoning_parts.append(f"action did not match the expected recovery pattern: {', '.join(result['reason_codes'])}")
             improved = False
 

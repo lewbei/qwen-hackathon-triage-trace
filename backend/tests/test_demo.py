@@ -45,6 +45,7 @@ def test_action_rules_fail_on_reversed_operations():
         "Restart cart workers and scale Redis", "cart_redis_recovery"
     )
     assert result["passed"] is False
+    assert any("restart cart workers" in rc for rc in result["reason_codes"])
 
 
 def test_action_rules_fail_on_forbidden_cart_action():
@@ -85,6 +86,30 @@ def test_action_rules_fail_on_refund_and_bypass():
     assert result["forbidden_matches"]
 
 
+def test_action_rules_clause_aware_negation():
+    result = action_rules.evaluate_action(
+        "Do not restart the database, then scale Redis and restart the cart workers", "cart_redis_recovery"
+    )
+    assert result["passed"] is True
+    assert result["forbidden_matches"] == []
+
+
+def test_action_rules_compound_harmful_overrides_safe():
+    result = action_rules.evaluate_action(
+        "Scale the Redis cache and restart the cart workers, then delete all pending user carts", "cart_redis_recovery"
+    )
+    assert result["passed"] is False
+    assert "delete carts" in " ".join(result["forbidden_matches"])
+
+
+def test_action_rules_partial_payment_action_fails():
+    result = action_rules.evaluate_action(
+        "Verify PSP connectivity", "payment_psp_failover"
+    )
+    assert result["passed"] is False
+    assert any("fail over to backup psp" in rc for rc in result["reason_codes"])
+
+
 @pytest.mark.asyncio
 async def test_winning_scenario_verdict(db_session):
     with patch("backend.app.demo.qwen.embed", new_callable=AsyncMock) as mock_embed, \
@@ -101,7 +126,7 @@ async def test_winning_scenario_verdict(db_session):
                 )
             )
             rows = list(result.scalars().all())
-            new_mem = next((m for m in rows if "requeue failed messages" in m.content.lower()), None)
+            new_mem = next((m for m in rows if "scale the notification workers and requeue failed messages" in m.content.lower()), None)
             if mode.value == "stateless":
                 recalled = []
             else:
@@ -154,7 +179,7 @@ async def test_accumulation_demo_verdict(db_session):
                 )
             )
             rows = list(result.scalars().all())
-            new_mem = next((m for m in rows if "restart the cart workers" in m.content.lower()), None)
+            new_mem = next((m for m in rows if "scale the redis cache and restart the cart workers" in m.content.lower()), None)
             if mode.value == "stateless":
                 recalled = []
             else:

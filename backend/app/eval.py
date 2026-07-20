@@ -85,8 +85,8 @@ class MockQwen:
             "latency_ms": 150.0,
         }
 
-    async def embed(self, texts: list[str]) -> list[list[float]]:
-        return [[0.0] * 1536 for _ in texts]
+    async def embed(self, texts: list[str], dimensions: int = 1536) -> list[list[float]]:
+        return [[0.0] * dimensions for _ in texts]
 
     async def rerank(self, *, query: str, documents: list[str], top_n: int | None = None, model: str | None = None) -> list[dict[str, Any]]:
         return []
@@ -212,6 +212,7 @@ async def evaluate_scenario(
 
         total_tokens, injected_tokens = _extract_event_usage(run)
 
+        expected = scenario.get("expected_action", "")
         result = {
             "scenario_id": scenario["id"],
             "category": scenario["category"],
@@ -294,6 +295,10 @@ async def run_evaluation(session: AsyncSession, scenarios: list[dict[str, Any]],
             if scenario["category"] in ("repeated", "operator-policy"):
                 seed["is_correct"] = True
 
+    from backend.app import agent as agent_module
+    from backend.app import memory as memory_module
+    from backend.app import qwen as qwen_module
+
     for scenario in scenarios:
         scenario["alert"]["tenant"] = tenant
 
@@ -303,10 +308,19 @@ async def run_evaluation(session: AsyncSession, scenarios: list[dict[str, Any]],
 
         # Memory treatment
         await _clear_eval_memories(session, tenant)
+        mock2 = None if live else MockQwen(scenario)
+        if mock2:
+            original_qwen = qwen_module.qwen
+            qwen_module.qwen = mock2
+            agent_module.qwen = mock2
+            memory_module.qwen = mock2
         seeded = await seed_scenario(session, scenario)
+        if mock2:
+            qwen_module.qwen = original_qwen
+            agent_module.qwen = original_qwen
+            memory_module.qwen = original_qwen
         seed_map = {s["id"]: s for s in seeded}
 
-        mock2 = None if live else MockQwen(scenario)
         result_memory = await evaluate_scenario(session, scenario, "memory", mock2)
 
         # Enrich memory result with recall analysis.

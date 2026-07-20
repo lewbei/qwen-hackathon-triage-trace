@@ -8,6 +8,7 @@ import tiktoken
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.action_rules import _content_tokens
 from backend.app.config import settings
 from backend.app.models import MemoryRecord
 from backend.app.qwen import qwen
@@ -434,15 +435,10 @@ def _lexical_rerank(
     memories: list[MemoryRecord],
 ) -> dict[uuid.UUID, float]:
     """Deterministic lexical fallback when no embedding/rerank signal is available."""
-    import re
-
-    def _words(text: str) -> set[str]:
-        return {t for t in re.findall(r"[a-z0-9]+", text.lower()) if len(t) > 2}
-
-    query_tokens = _words(query_text)
+    query_tokens = set(_content_tokens(query_text))
     scores: dict[uuid.UUID, float] = {}
     for m in memories:
-        content_tokens = _words(m.content)
+        content_tokens = set(_content_tokens(m.content))
         if not content_tokens:
             scores[m.id] = 0.0
             continue
@@ -468,6 +464,12 @@ async def _qwen_rerank(
         return {}
 
 
+def _is_valid_embedding(embedding: Any) -> bool:
+    return isinstance(embedding, (list, tuple)) and len(embedding) > 0 and all(
+        isinstance(x, (int, float)) for x in embedding
+    )
+
+
 async def retrieve_and_pack(
     session: AsyncSession,
     tenant: str,
@@ -482,20 +484,40 @@ async def retrieve_and_pack(
     relevance_threshold: float = 0.3,
 ) -> tuple[list[MemoryRecord], list[MemoryRecord], list[MemoryRecord], dict[str, Any]]:
     """Full retrieval lifecycle: vector candidates, rerank, relevance gate, score, MMR, pack."""
+    if not _is_valid_embedding(query_embedding):
+        query_embedding = None
+
     now = _now()
     candidates = await search_memories(session, tenant, scope, query_embedding, limit=candidate_limit)
 
-    # Try Qwen Cloud qwen3-rerank first; fall back to cosine, then lexical.
-    relevance = await _qwen_rerank(query_text, candidates)
-    if not relevance:
-        relevance = _cosine_rerank(candidates, query_embedding)
+    # Retrieval/reranking chain: prefer Qwen rerank, fall back to cosine when
+    # both query and candidate embeddings are valid, otherwise lexical.
+    relevance: dict[uuid.UUID, float] = {}
+    rerank_mode = "none"
+
+    qwen_relevance = await _qwen_rerank(query_text, candidates)
+    if qwen_relevance and max(qwen_relevance.values(), default=0.0) >= 0.05:
+        relevance = qwen_relevance
+        rerank_mode = "qwen"
+    elif query_embedding is not None:
+        cosine_relevance = _cosine_rerank(candidates, query_embedding)
+        if cosine_relevance and max(cosine_relevance.values(), default=0.0) >= 0.05:
+            relevance = cosine_relevance
+            rerank_mode = "cosine"
     if not relevance:
         relevance = _lexical_rerank(query_text, candidates)
+        rerank_mode = "lexical"
 
     # Apply a calibrated relevance gate before utility scoring and MMR.
     # Active memories that are off-topic are filtered out; their lifecycle status is unchanged.
-    filtered = [m for m in candidates if relevance.get(m.id, 0.0) < relevance_threshold]
-    passed = [m for m in candidates if relevance.get(m.id, 0.0) >= relevance_threshold]
+    # Operator policies are always retained because they constrain which actions are acceptable.
+    passed_ids = {
+        m.id
+        for m in candidates
+        if relevance.get(m.id, 0.0) >= relevance_threshold or m.type == "policy"
+    }
+    passed = [m for m in candidates if m.id in passed_ids]
+    filtered = [m for m in candidates if m.id not in passed_ids]
     filter_reasons = {
         str(m.id): {"reason": "relevance_below_threshold", "score": round(relevance.get(m.id, 0.0), 4)}
         for m in filtered
@@ -532,6 +554,8 @@ async def retrieve_and_pack(
         "filtered": len(filtered),
         "filtered_ids": [str(m.id) for m in filtered],
         "filter_reasons": filter_reasons,
+        "rerank_mode": rerank_mode,
+        "relevance_threshold": relevance_threshold,
         "used_tokens": used_tokens,
         "budget": budget,
     }

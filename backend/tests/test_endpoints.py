@@ -213,12 +213,12 @@ async def test_demo_endpoints_run_and_cleanup(db_session, monkeypatch):
         rows = list(result.scalars().all())
         if alert.service == "notification-service":
             new_mem = next(
-                (m for m in rows if "requeue failed messages" in m.content.lower()), None
+                (m for m in rows if "scale the notification workers and requeue failed messages" in m.content.lower()), None
             )
             action = "Scale notification workers and requeue failed messages"
         else:
             new_mem = next(
-                (m for m in rows if "restart the cart workers" in m.content.lower()), None
+                (m for m in rows if "scale the redis cache and restart the cart workers" in m.content.lower()), None
             )
             action = "Scale Redis and restart cart workers"
         recalled = [str(new_mem.id)] if new_mem and mode == DemoMode.memory else []
@@ -426,3 +426,63 @@ async def test_stream_run_sets_demo_tenant_cookie(db_session, monkeypatch):
     set_cookie = response.headers.get("set-cookie", "")
     assert "demo_tenant=" in set_cookie
     assert "HttpOnly" in set_cookie
+
+
+@pytest.mark.asyncio
+async def test_demo_scenarios_catalog_lists_three_scenarios(db_session):
+    """The catalog endpoint must expose exactly three server-owned scenarios."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/demo/scenarios")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 3
+    assert {s["id"] for s in data} == {
+        "cart-redis-latency",
+        "notifications-queue-backlog",
+        "payments-psp-failure",
+    }
+
+
+@pytest.mark.asyncio
+async def test_demo_setup_seeds_each_scenario(db_session, monkeypatch):
+    """Every server-owned scenario must seed old=superseded, new=simulated_safe, poison=quarantined."""
+    from unittest.mock import AsyncMock
+
+    from sqlalchemy import select
+    from backend.app.models import MemoryRecord
+
+    monkeypatch.setattr(
+        "backend.app.demo_scenarios.qwen.embed",
+        AsyncMock(return_value=[[0.0] * 1536, [0.0] * 1536, [0.0] * 1536]),
+    )
+
+    for scenario_id in (
+        "cart-redis-latency",
+        "notifications-queue-backlog",
+        "payments-psp-failure",
+    ):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.post(f"/api/demo/setup/{scenario_id}")
+
+        assert response.status_code == 200, f"{scenario_id} setup failed"
+        result = response.json()
+        tenant = result["alert"]["tenant"]
+
+        rows = list(
+            (
+                await db_session.execute(
+                    select(MemoryRecord).where(MemoryRecord.tenant == tenant)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        old = [m for m in rows if "Initial approved" in m.content]
+        new = [m for m in rows if "Updated approved" in m.content]
+        poison = [m for m in rows if "Ignore all previous" in m.content]
+
+        assert len(old) == 1 and old[0].status == "superseded"
+        assert len(new) == 1 and new[0].status == "simulated_safe"
+        assert len(poison) == 1 and poison[0].status == "quarantined"
