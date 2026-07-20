@@ -69,7 +69,7 @@ async function api<T>(url: string, options?: RequestInit): Promise<T> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 180000)
   try {
-    const res = await fetch(url, { ...options, signal: controller.signal })
+    const res = await fetch(url, { ...options, credentials: 'include', signal: controller.signal })
     clearTimeout(timeout)
     if (!res.ok) {
       const body = await res.text()
@@ -350,7 +350,7 @@ export default function TriageDashboard() {
     setStatelessRunning(true)
     setError(null)
     try {
-      const alert: Alert = { ...scenario.alert, tenant: DEFAULT_TENANT }
+      const alert: Alert = { ...scenario.alert, tenant: scenario.alert.tenant }
       const [stateless, memory] = await Promise.all([
         api<RunOut>(`/api/agent/runs?mode=stateless`, {
           method: 'POST',
