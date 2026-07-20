@@ -111,12 +111,13 @@ class QwenGateway:
                 dimensions=dimensions,
             )
         except APIError as exc:
-            # Fall back to v3 if the primary embedding model is unavailable.
+            # Fall back to v3 if the primary model is unavailable or out of quota.
             msg = str(exc).lower()
+            model_errors = ("not found", "not supported", "does not exist")
+            quota_errors = ("out of quota", "quota exceeded", "insufficient quota", "insufficient_quota")
             if (
-                exc.code in ("model_not_found", "invalid_model")
-                or "model" in msg
-                and ("not found" in msg or "not supported" in msg or "does not exist" in msg)
+                exc.code in ("model_not_found", "invalid_model", "insufficient_quota")
+                or any(phrase in msg for phrase in model_errors + quota_errors)
             ):
                 response = await self.embedding_client.embeddings.create(
                     input=texts,
