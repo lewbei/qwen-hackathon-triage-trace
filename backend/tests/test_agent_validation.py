@@ -457,7 +457,7 @@ async def test_embed_falls_back_to_v3_when_v4_unavailable():
 
     calls: list[dict[str, Any]] = []
 
-    async def _fake_create(*, input, model, dimensions, **kwargs):
+    async def _fake_create(self, *, input, model, dimensions, **kwargs):
         calls.append({"model": model, "input": input, "dimensions": dimensions})
         if model == settings.qwen_embedding_model:
             err = APIError("The model text-embedding-v4 is not found.")
