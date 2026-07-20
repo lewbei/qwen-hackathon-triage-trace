@@ -4,7 +4,7 @@
 
 ## Setup (10 s)
 
-1. Open `http://localhost`.
+1. Open `http://localhost:5173` (local dev via `docker compose up`) or the public URL in `README.md`.
 2. If the screen shows *"No incident memory loaded"*, click **Initialize production demo**.
 3. The page refreshes with the cart-service incident, runbook, and memory timeline.
 

@@ -59,64 +59,55 @@ The MemoryAgent track is probably crowded with chat/memory demos. A **production
 
 | Weakness | Risk | Fix priority |
 |---|---|---|
-| Evaluation suite now has 13 scenarios but still needs adversarial memory-injection coverage | evaluation depth | P0: add adversarial memory-injection suite and commit fresh live run |
-| Alibaba Cloud ECS deployment is live but docs still describe RDS | documentation does not match production | P0: update deployment docs to ECS + local pgvector |
 | No public 3-minute demo video | submission is ineligible | P0: script + record + upload |
-| Architecture diagram exists but is not referenced consistently | weak on "Innovation & AI Creativity" | P0: embed `docs/architecture.png` and keep `docs/architecture.mmd` in sync |
-| Latency per run ~20–35 s | demo feels slow | P1: add async streaming + status endpoint, cache fixtures |
+| Live demo is best-effort; some networks may block the ECS IP | judges cannot verify | P0: add mobile-hotspot / alternate-network guidance |
+| MemoryAgentBench pilot is only 3 samples / 15 questions | evaluation depth | P1: run more samples if quota allows, or label as pilot |
+| Latency per run ~26–31 s | demo feels slow | P1: add async streaming + status endpoint, cache fixtures |
 | UI does not surface provenance / trust score | missed security story | P1: add provenance column + trust badge |
-| No memory integrity audit log | weak on security depth | P1: add `RunRecord` → immutable run audit |
+| `RunRecord` audit trail exists but is not surfaced as an immutable audit log | weak on security depth | P1: expose `GET /api/agent/runs/{id}/events` in the UI |
 
 ## 4. Winning plan (action items to implement before submission)
 
 ### P0 — Submission eligibility
 
-1. **Deploy on Alibaba Cloud**
-   - Launch an ECS instance and run the PostgreSQL + pgvector container on the same host (`docker-compose.prod.yml`).
-   - Push Docker images, run migrations, and verify `/api/health`, `/api/agent/runs`, `/api/memories`.
+1. **Deploy on Alibaba Cloud** ✅ Done
+   - ECS instance is live at `http://47.251.179.138/` with `docker-compose.prod.yml`.
+   - `/api/health`, `/api/agent/runs`, and `/api/memories` are verified.
    - Record a short proof-of-deployment video and add the link to the Devpost submission.
-2. **Create a public GitHub repo**
-   - Add an Apache-2.0 license at the top of the repo.
-   - Ensure `.env` and secrets are excluded; provide `.env.example`.
-3. **3-minute demo video**
+2. **Public GitHub repo and license** ✅ Done
+   - Repo is public, Apache-2.0 licensed, with `.env.example` and secrets excluded.
+3. **3-minute demo video** — Still needed
    - Script:
      - 0:00–0:20: problem (autonomous incident agents can be misled by poisoned logs / stale runbooks).
      - 0:20–0:50: stateless run produces a risky proposal.
      - 0:50–1:30: operator rejects it; preference memory is written and embedded.
      - 1:30–2:10: temporal runbook conflict — older memory is superseded, newer runbook 2.0 is recalled.
      - 2:10–2:45: poisoned log scenario; agent declines to act.
-     - 2:45–3:00: evaluation dashboard showing 40% → 60% accuracy, 100% policy compliance.
-4. **Architecture diagram**
-   - Render `docs/architecture.mmd` to `docs/architecture.png` and embed in README.
+     - 2:45–3:00: evaluation dashboard showing **stateless 23.1% → memory 84.6%** accuracy, 100% policy compliance.
+4. **Architecture diagram** ✅ Done
+   - `docs/architecture.mmd` is rendered to `.png`, `.svg`, `.pdf` and embedded in `README.md`.
 
-### P0 — Evaluation depth
+### P0 — Evaluation depth ✅ Mostly done
 
-5. **Expand evaluation scenarios to 12+**
-   - 4 repeated-incident pairs (baseline correctness).
-   - 4 operator-policy override cases.
-   - 4 temporal-conflict / supersession cases.
-   - 2 poisoned-log variants + 1 irrelevant-memory overload test.
-6. **Add adversarial metrics**
-   - `poison_recall_rate`: how often a malicious memory is NOT promoted or recalled.
-   - `stale_override_rate`: how often a superseded memory is incorrectly recalled.
-   - `policy_violation_rate`: existing, keep at 0%.
-7. **Run and commit a fresh full live evaluation**
-   - `python backend/scripts/evaluate.py --live`
-   - Update `evaluations/latest.json` and README table.
+5. **Custom adversarial suite** — 13 live scenarios committed in `evaluations/latest.json`.
+   - 4 repeated-incident pairs, 3 operator-policy cases, 3 temporal-conflict cases, 2 poisoned-log variants, 1 irrelevant-overload test.
+6. **Adversarial metrics** — `poison_safe_rate`, `stale_override_rate`, `temporal_correct_rate`, and `policy_violation_rate` are reported in `evaluations/latest.json` and the README table.
+7. **ASB memory-poisoning gate** — `backend/evaluations/benchmarks/asb_memorygate.py` runs 100 attack + 20 normal tools and reports precision/recall (`evaluations/asb_memorygate.json`).
+8. **MemoryAgentBench pilot** — 3 samples / 15 questions, 14/15 correct (`evaluations/memoryagentbench.json`). Scale to more samples if quota allows.
 
 ### P1 — Polish and differentiation
 
-8. **UI improvements**
+9. **UI improvements**
    - Memory Lens: add `provenance`, `source_authority`, `utility`, `expires_at`, `supersedes_id` columns.
    - Show a "trust badge" per memory (green / amber / red).
    - Add a run timeline view with `GET /api/agent/runs/{id}/events`.
-9. **Performance**
-   - Cache fixture files in memory; parallelize evidence tool calls if safe.
-   - Add async status endpoint or SSE so the dashboard shows progress instead of blocking.
-10. **Docs and repo hygiene**
-    - Fill `docs/deployment.md` with the exact Alibaba Cloud steps we used.
-    - Add `ARCHITECTURE.md` explaining the memory firewall design.
-    - Add `CONTRIBUTING.md` or `SECURITY.md` if time permits.
+10. **Performance**
+    - Cache fixture files in memory; parallelize evidence tool calls if safe.
+    - Add async status endpoint or SSE so the dashboard shows progress instead of blocking.
+11. **Docs and repo hygiene** ✅ Done
+    - `docs/deployment.md` describes ECS + local pgvector.
+    - `docs/ARCHITECTURE.md` explains the memory-firewall design.
+    - `CONTRIBUTING.md` / `SECURITY.md` are nice-to-have, not required for submission.
 
 ## 5. Key talking points for the submission / video
 

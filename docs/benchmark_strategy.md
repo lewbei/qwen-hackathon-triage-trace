@@ -35,12 +35,9 @@ Zero false positives on normal tools is the key result. The result demonstrates 
 
 3. **MemoryAgentBench conflict-resolution pilot** (`backend/evaluations/benchmarks/memoryagentbench.py`):
 
-|| Setting | Accuracy |
-|---|---|---|
-|| All facts provided | 4 / 5 (80%) |
-|| Top-50 retrieval only | 1 / 5 (20%) |
+Latest run: **3 samples, 15 questions, 14 / 15 correct (93.33%)** (committed to `evaluations/memoryagentbench.json`).
 
-This confirms reasoning is strong once the relevant facts are surfaced, and it identifies multi-hop retrieval as the next bottleneck.
+The runner isolates each sample in its own tenant, maps conflicting facts to the same `subject`/`predicate`, and presents retrieved facts in chronological order. The single miss reflects a multi-hop chain where the model still picks an older relation branch, confirming that retrieval is the bottleneck, not reasoning.
 
 **Why still keep a custom suite?** No public benchmark currently covers the intersection of real-world incident-response workflow, persistent approved-and-simulated memory, temporal supersession, adversarial memory poisoning, and human-in-the-loop approval. The public benchmarks give externally comparable numbers; the custom suite isolates the specific memory-firewall behaviors TriageTrace ships.
 

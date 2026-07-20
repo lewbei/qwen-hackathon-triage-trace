@@ -40,7 +40,7 @@ active
    │
    ├─ higher authority, OR equal authority + newer timestamp ──► superseded
    ├─ lower authority or out-of-order timestamp ──► quarantined
-   ├─ TTL expires ──► expired
+   ├─ `valid_from` in future or `expires_at` passed ──► excluded from recall
    └─ operator delete ──► deleted
 ```
 

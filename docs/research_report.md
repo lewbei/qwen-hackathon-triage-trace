@@ -83,11 +83,11 @@ TriageTrace already implements this: every remediation is a **proposal** pending
 
 **Current TriageTrace evidence:**
 
-- Uses Qwen Cloud `qwen3.7-plus` for reasoning, `text-embedding-v4` for memory vectors, with slots for `qwen3-rerank` and `qwen3.6-flash` extraction.
+- Uses Qwen Cloud `qwen3.7-plus` for reasoning, `text-embedding-v4` for memory vectors, with `text-embedding-v3` quota fallback and slots for `qwen3-rerank` and `qwen3.6-flash` extraction.
 - Implements vector retrieval → rerank fallback → utility-weighted scoring → MMR diversity → 800-token packing.
 - MemoryGate validates memories before persistence against poison patterns and active policies.
 - Full FastAPI + SQLAlchemy/Alembic + pgvector + Docker + React + evaluation harness.
-- Committed live benchmark: 13 scenarios, 30.8% → 76.9% accuracy, 100% policy compliance, 0 poison/stale recall.
+- Committed live benchmark: 13 scenarios, **stateless 23.1% → memory 84.6%** accuracy, 100% policy compliance, 0 poison/stale recall.
 
 **Gaps / opportunities to score higher:**
 
@@ -136,24 +136,24 @@ TriageTrace already implements this: every remediation is a **proposal** pending
 
 **Evidence:**
 
-- README has quickstart, benchmark tables, scenario highlights, and an ASCII architecture.
+- README has quickstart, benchmark tables, scenario highlights, CI badge, and a rendered architecture diagram.
 - Dashboard shows token budget bar, recalled/omitted/rejected memories.
+- `docs/JUDGE_PACKET.md`, `docs/DEMO_SCRIPT.md`, `docs/RUBRIC_SCORECARD.md`, and `docs/screenshots/` give judges a fast on-ramp.
 
 **Gaps / opportunities:**
 
 1. **3-minute public demo video** is mandatory. Script should open with the memory-poisoning threat, then show stateless failure vs. memory success.
-2. **Architecture diagram** should be a rendered image, not ASCII.
-3. **Add a "wow" moment:** quarantine a malicious memory in real time, then show the same incident returning a safe proposal.
-4. **Devpost project page** should be written like a product brief: problem, solution, demo, architecture, evaluation numbers.
+2. **Add a "wow" moment:** quarantine a malicious memory in real time, then show the same incident returning a safe proposal.
+3. **Devpost project page** should be written like a product brief: problem, solution, demo, architecture, evaluation numbers.
 
 ## 4. Recommendations to maximize winning odds
 
 ### P0 (submission eligibility + judging)
 
-1. **Deploy on Alibaba Cloud** (ECS with local PostgreSQL/pgvector container) and record proof of deployment.
-2. **Produce a 3-minute public demo video** with a clear memory-firewall "wow" moment.
-3. **Render `docs/architecture.png`** from `docs/architecture.mmd` and embed in README.
-4. **Add `ARCHITECTURE.md`** explaining the memory firewall design with citations to the memory-poisoning research.
+1. **Deploy on Alibaba Cloud** ✅ Done — live at `http://47.251.179.138/`. Record a short proof-of-deployment clip for Devpost.
+2. **Produce a 3-minute public demo video** — still the main remaining eligibility item.
+3. **Render `docs/architecture.png`** ✅ Done — dual-plane memory-control diagram is in README and `docs/architecture.{png,svg,pdf}` are regenerated.
+4. **Add `ARCHITECTURE.md`** ✅ Done — memory firewall, request flow, and lifecycle are documented.
 5. **Write the Devpost description** around the four judging axes above.
 
 ### P1 (technical depth)

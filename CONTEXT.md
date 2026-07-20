@@ -15,8 +15,9 @@
 - **Active**: trusted, valid, and eligible for retrieval.
 - **Quarantined**: contradicts a higher-authority source or contains an embedded instruction from untrusted content.
 - **Superseded**: replaced by a newer, equally-or-more authoritative memory.
-- **Expired**: past its `expires_at` timestamp.
 - **Deleted**: explicitly forgotten by an operator; retained as an audit tombstone.
+
+A memory is also excluded from recall when `expires_at` has passed or `valid_from` is in the future, regardless of its stored status.
 
 ## Memory types
 
