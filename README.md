@@ -1,5 +1,7 @@
 # TriageTrace — A Temporal Memory Firewall for Incident Agents
 
+[![CI](https://github.com/lewbei/qwen-hackathon-triage-trace/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/lewbei/qwen-hackathon-triage-trace/actions)
+
 **Track 1: MemoryAgent** — Qwen Hackathon 2026
 
 TriageTrace is a temporal-memory incident-response agent that remembers operator-approved, simulation-screened remediations and refuses poisoned, contradictory, or obsolete memories. It uses Qwen Cloud (`qwen3.7-plus` for reasoning, `text-embedding-v4` for memory vectors, plus slots for `qwen3.6-flash` extraction and `qwen3-rerank`) to propose, refine, and audit remediations.
@@ -8,6 +10,8 @@ TriageTrace is a temporal-memory incident-response agent that remembers operator
 
 - Public repository: https://github.com/lewbei/qwen-hackathon-triage-trace
 - Live demo URL: http://47.251.179.138/
+- CI status: https://github.com/lewbei/qwen-hackathon-triage-trace/actions/workflows/ci.yml
+- Health check: `curl -s http://47.251.179.138/api/health`
 
 ## Judge assets
 
@@ -143,6 +147,11 @@ Detailed architecture and deployment notes: `docs/architecture.mmd`, `docs/deplo
 - Credentials and sensitive patterns are redacted before any model call or database write.
 - Memories are typed (`observation`, `procedure`, `preference`, `policy`, `fact`) and expire based on TTLs; procedures need validation before promotion.
 - Logs and external tool content are untrusted: embedded instructions cannot become preferences or policies.
+
+## Operational notes
+
+- The `text-embedding-v3` fallback is a degraded-resilience mode: it keeps the demo alive if `text-embedding-v4` is unavailable, but v3 and v4 vectors are not semantically interchangeable. A mixed database would degrade retrieval, so production deployments should regenerate all embeddings with one model.
+- The live demo is best-effort on the provided Alibaba Cloud ECS instance; if your network blocks the IP or port, try a different connection.
 
 ## Deployment
 
