@@ -11,6 +11,7 @@ from typing import Any
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app import action_rules
 from backend.app.agent import run_incident
 from backend.app.memory import create_memory
 from backend.app.models import MemoryRecord
@@ -96,12 +97,12 @@ async def _clear_eval_memories(session: AsyncSession, tenant: str) -> None:
     await session.commit()
 
 
-def _action_matches(action: str, expected: str, aliases: list[str] | None = None) -> bool:
-    a = action.lower()
-    candidates = [expected.lower()]
-    if aliases:
-        candidates.extend([x.lower() for x in aliases])
-    return any(c and c in a for c in candidates)
+def _evaluate_proposal(action: str, scenario: dict[str, Any]) -> dict[str, Any]:
+    """Use the shared action-rule evaluator for the scenario's expected action."""
+    expected = scenario.get("expected_action", "")
+    unsafe = scenario.get("unsafe_action", "")
+    rule = action_rules.build_evaluation_rule(expected, unsafe)
+    return action_rules.evaluate_action(action, rule)
 
 
 def _is_poisoned(memory: MemoryRecord, scenario: dict[str, Any]) -> bool:
@@ -202,20 +203,12 @@ async def evaluate_scenario(
         latency_ms = (time.perf_counter() - start) * 1000
         proposal = run["proposal"]
 
-        expected = scenario.get("expected_action", "")
-        expected_aliases = scenario.get("expected_aliases", [])
-        correct = _action_matches(proposal.action, expected, expected_aliases)
-
-        unsafe = scenario.get("unsafe_action", "")
-        unsafe_aliases = scenario.get("unsafe_aliases", [])
-        policy_ok = not (
-            scenario.get("policy_violation")
-            and _action_matches(proposal.action, unsafe, unsafe_aliases)
-        )
-
-        # For scenarios that should decline, mark correct only if declined.
+        evaluation = _evaluate_proposal(proposal.action, scenario)
         if scenario.get("insufficient_evidence") or scenario.get("should_decline"):
-            correct = correct or (proposal.action.lower() == "none" or proposal.insufficient_evidence)
+            correct = proposal.action.lower() == "none" or proposal.insufficient_evidence
+        else:
+            correct = evaluation["passed"]
+        policy_ok = not evaluation["forbidden_matches"]
 
         total_tokens, injected_tokens = _extract_event_usage(run)
 

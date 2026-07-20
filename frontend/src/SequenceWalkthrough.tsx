@@ -51,11 +51,14 @@ export default function SequenceWalkthrough({
       packed_count: number
       rejected_count: number
       omitted_count: number
+      filtered_count?: number
       used_tokens: number
       budget: number
       packed_ids: string[]
       rejected_ids: string[]
       omitted_ids: string[]
+      filtered_ids?: string[]
+      filter_reasons?: Record<string, { reason: string; score?: number }>
     }
     return payload
   }, [memoryRun])
@@ -79,6 +82,11 @@ export default function SequenceWalkthrough({
   const omittedMemories = useMemo(() => {
     if (!memoryPack) return []
     return memoryPack.omitted_ids.map((id) => memories.find((m) => m.id === id)).filter(Boolean) as Memory[]
+  }, [memoryPack, memories])
+
+  const filteredMemories = useMemo(() => {
+    if (!memoryPack?.filtered_ids) return []
+    return memoryPack.filtered_ids.map((id) => memories.find((m) => m.id === id)).filter(Boolean) as Memory[]
   }, [memoryPack, memories])
 
   const reasoningEvent = useMemo(() => {
@@ -107,9 +115,14 @@ export default function SequenceWalkthrough({
         available: Boolean(memoryPack && memoryPack.packed_count > 0),
       },
       {
-        title: '3. Block poisoned and stale memories',
-        description: 'Memories that are quarantined, superseded, expired, or off-topic are kept out of the context window.',
-        available: Boolean(memoryPack && (memoryPack.rejected_count > 0 || memoryPack.omitted_count > 0)),
+        title: '3. Block poisoned, stale, and off-topic memories',
+        description: 'Lifecycle-rejected, relevance-filtered, and budget-omitted memories are kept out of the context window.',
+        available: Boolean(
+          memoryPack &&
+            (memoryPack.rejected_count > 0 ||
+              memoryPack.omitted_count > 0 ||
+              (memoryPack.filtered_count ?? 0) > 0)
+        ),
       },
       {
         title: '4. Send governed context to Qwen',
@@ -153,7 +166,7 @@ export default function SequenceWalkthrough({
     )
   }
 
-  function StepHeader({ title, description }: { title: string; description: string }) {
+  const StepHeader = ({ title, description }: { title: string; description: string }) => {
     return (
       <div className="mb-4">
         <h2 className="font-semibold text-slate-800">{title}</h2>
@@ -162,7 +175,7 @@ export default function SequenceWalkthrough({
     )
   }
 
-  function renderStep() {
+  const renderStep = () => {
     switch (activeStep) {
       case 0:
         return (
@@ -256,8 +269,34 @@ export default function SequenceWalkthrough({
                     ))}
                   </div>
                 )}
-                {memoryPack.rejected_count === 0 && memoryPack.omitted_count === 0 && (
-                  <p className="text-sm text-slate-500">No memories were blocked or omitted.</p>
+                {(memoryPack.filtered_count ?? 0) > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">
+                      Relevance filtered ({memoryPack.filtered_count})
+                    </p>
+                    {filteredMemories.map((m) => (
+                      <div key={m.id} className="bg-slate-50 border border-slate-200 rounded p-3 text-sm">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`px-2 py-0.5 rounded text-xs font-semibold border ${statusClass(m.status)}`}>{m.status}</span>
+                          <span className="text-xs text-slate-500">{shortDate(m.source_timestamp)}</span>
+                        </div>
+                        <p className="text-slate-800">{truncate(m.content, 140)}</p>
+                        {(() => {
+                          const fr = memoryPack.filter_reasons?.[m.id]
+                          if (!fr) return null
+                          return (
+                            <p className="text-xs text-slate-600 mt-1">
+                              Reason: {fr.reason}
+                              {fr.score !== undefined && ` (score ${fr.score.toFixed(3)})`}
+                            </p>
+                          )
+                        })()}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {memoryPack.rejected_count === 0 && memoryPack.omitted_count === 0 && (memoryPack.filtered_count ?? 0) === 0 && (
+                  <p className="text-sm text-slate-500">No memories were blocked, filtered, or omitted.</p>
                 )}
               </div>
             ) : (

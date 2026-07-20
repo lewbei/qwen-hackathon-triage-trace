@@ -52,7 +52,8 @@ curl -s -X POST "http://localhost:5173/api/proposals/<run-id>/decision" \
 2. An operator approves or rejects it; the operator-approved lesson is screened by a simulator and, if predicted to improve metrics, becomes a durable `simulated_safe` `procedure` or `preference` memory with a vector embedding.
 3. A later incident in the same scope triggers memory retrieval: vector candidates, reranking/fallback, MMR diversity scoring, utility weighting, and 800-token packing. Policies and preferences are packed first.
 4. A newer simulated-safe procedure supersedes an older one; a memory that contradicts a higher-authority source is quarantined; a malicious instruction embedded in a log is not promoted.
-5. `POST /api/demo/reset` (requires `DEMO_SECRET`) reseeds fixture observations in the default tenant without touching other tenants.
+5. A server-owned demo catalog (`GET /api/demo/scenarios`, `POST /api/demo/setup/{scenario_id}`) exposes cart, notification, and payment scenarios without trusting client-controlled incident data.
+6. `POST /api/demo/reset` (requires `DEMO_SECRET`) reseeds fixture observations in the default tenant without touching other tenants.
 
 ## Benchmarks
 

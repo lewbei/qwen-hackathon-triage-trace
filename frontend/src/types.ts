@@ -96,3 +96,26 @@ export interface DecisionResult {
   memory_id?: string
   memory_status?: string
 }
+
+export interface MetricSignalDefinition {
+  source: 'metrics' | 'logs' | 'deploy'
+  name: string
+  metric_key: string
+  unit: string
+  severity_threshold?: number
+  status: 'critical' | 'warning' | 'ok'
+}
+
+export interface DemoScenario {
+  id: string
+  title: string
+  service: string
+  severity: string
+  description: string
+  incident: Incident
+  alert: Alert
+  memorySubject: string
+  memoryPredicate: string
+  metricSignals: MetricSignalDefinition[]
+  expectedOutcome: 'simulated_safe' | 'safe_decline'
+}

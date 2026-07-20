@@ -429,11 +429,33 @@ def _cosine_rerank(
     return scores
 
 
+def _lexical_rerank(
+    query_text: str,
+    memories: list[MemoryRecord],
+) -> dict[uuid.UUID, float]:
+    """Deterministic lexical fallback when no embedding/rerank signal is available."""
+    import re
+
+    def _words(text: str) -> set[str]:
+        return {t for t in re.findall(r"[a-z0-9]+", text.lower()) if len(t) > 2}
+
+    query_tokens = _words(query_text)
+    scores: dict[uuid.UUID, float] = {}
+    for m in memories:
+        content_tokens = _words(m.content)
+        if not content_tokens:
+            scores[m.id] = 0.0
+            continue
+        overlap = len(query_tokens & content_tokens)
+        scores[m.id] = overlap / max(len(content_tokens), 1)
+    return scores
+
+
 async def _qwen_rerank(
     query_text: str,
     memories: list[MemoryRecord],
 ) -> dict[uuid.UUID, float]:
-    """Call Qwen Cloud qwen3-rerank to score memory relevance. Falls back to cosine on any error."""
+    """Call Qwen Cloud qwen3-rerank to score memory relevance. Falls back to lexical on any error."""
     if not memories:
         return {}
     documents = [m.content for m in memories]
@@ -457,23 +479,35 @@ async def retrieve_and_pack(
     rerank_limit: int = 10,
     mmr_k: int = 10,
     mmr_lambda: float = 0.75,
+    relevance_threshold: float = 0.3,
 ) -> tuple[list[MemoryRecord], list[MemoryRecord], list[MemoryRecord], dict[str, Any]]:
-    """Full retrieval lifecycle: vector candidates, rerank, score, MMR, pack."""
+    """Full retrieval lifecycle: vector candidates, rerank, relevance gate, score, MMR, pack."""
     now = _now()
     candidates = await search_memories(session, tenant, scope, query_embedding, limit=candidate_limit)
 
-    # Try Qwen Cloud qwen3-rerank first; fall back to cosine similarity.
+    # Try Qwen Cloud qwen3-rerank first; fall back to cosine, then lexical.
     relevance = await _qwen_rerank(query_text, candidates)
     if not relevance:
         relevance = _cosine_rerank(candidates, query_embedding)
+    if not relevance:
+        relevance = _lexical_rerank(query_text, candidates)
 
-    # Compute utility per candidate.
-    utilities = {m.id: _compute_utility(m, relevance.get(m.id, 0.0), now) for m in candidates}
-    for m in candidates:
+    # Apply a calibrated relevance gate before utility scoring and MMR.
+    # Active memories that are off-topic are filtered out; their lifecycle status is unchanged.
+    filtered = [m for m in candidates if relevance.get(m.id, 0.0) < relevance_threshold]
+    passed = [m for m in candidates if relevance.get(m.id, 0.0) >= relevance_threshold]
+    filter_reasons = {
+        str(m.id): {"reason": "relevance_below_threshold", "score": round(relevance.get(m.id, 0.0), 4)}
+        for m in filtered
+    }
+
+    # Compute utility per remaining candidate.
+    utilities = {m.id: _compute_utility(m, relevance.get(m.id, 0.0), now) for m in passed}
+    for m in passed:
         m.utility = utilities[m.id]
 
     # MMR selection over top reranked candidates.
-    reranked = sorted(candidates, key=lambda m: utilities[m.id], reverse=True)[:rerank_limit]
+    reranked = sorted(passed, key=lambda m: utilities[m.id], reverse=True)[:rerank_limit]
     selected = _apply_mmr(reranked, utilities, query_embedding, k=mmr_k, lambda_param=mmr_lambda)
 
     # Pack into token budget.
@@ -495,6 +529,9 @@ async def retrieve_and_pack(
         "packed": len(packed),
         "omitted": len(omitted),
         "rejected": len(rejected),
+        "filtered": len(filtered),
+        "filtered_ids": [str(m.id) for m in filtered],
+        "filter_reasons": filter_reasons,
         "used_tokens": used_tokens,
         "budget": budget,
     }

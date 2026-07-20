@@ -1,7 +1,8 @@
 {
-  "cpu": 0.34,
-  "memory": 0.55,
-  "errors": 0.02,
-  "latency_p99": 450,
-  "checkout_failures": 0
+  "cpu": 0.48,
+  "memory": 0.61,
+  "errors": 0.12,
+  "psp_latency_p99": 4200,
+  "payment_timeouts": 31,
+  "psp_available": false
 }

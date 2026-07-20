@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from backend.app.action_rules import _phrase_matches, evaluate_action
+
 
 def _load_fixture(service: str, name: str) -> dict[str, Any] | None:
     base = Path(__file__).parent.parent / "fixtures" / service
@@ -17,9 +19,76 @@ def _clamp(v: float, lo: float = 0.0, hi: float = 1.0) -> float:
     return max(lo, min(hi, v))
 
 
-def _contains(text: str, *keywords: str) -> bool:
-    t = text.lower()
-    return any(k in t for k in keywords)
+def _service_rule_id(service: str) -> str:
+    return {
+        "cart-service": "cart_redis_recovery",
+        "notification-service": "notification_backlog_recovery",
+        "payment-service": "payment_psp_failover",
+    }.get(service, f"{service}_default")
+
+
+def _apply_benefit(post: dict[str, Any], service: str, matched_operations: list[str]) -> str:
+    """Apply a service-aware positive metric transform driven by the matched rule operations."""
+    action_lower = " ".join(matched_operations).lower()
+    queue_depth = float(post.get("queue_depth", 0.0))
+    errors = float(post.get("errors", 0.0))
+    cpu = float(post.get("cpu", 0.0))
+    memory = float(post.get("memory", 0.0))
+
+    if service == "notification-service" or (queue_depth > 0 and "requeue" in action_lower):
+        if "requeue" in action_lower or "scale" in action_lower:
+            post["queue_depth"] = max(0.0, queue_depth * 0.2)
+            post["cpu"] = _clamp(cpu + 0.15)
+            post["memory"] = _clamp(memory + 0.05)
+            post["errors"] = _clamp(errors * 0.5)
+            return "scaling workers and requeueing drains the backlog without dropping messages"
+
+    if service in ("cart-service", "payment-service"):
+        if "scale redis" in action_lower or "scale" in action_lower:
+            post["errors"] = _clamp(errors * 0.2)
+            post["cpu"] = _clamp(cpu + 0.1)
+            return "scaling Redis/workers addresses checkout latency and drops error rate"
+        if "restart" in action_lower and "worker" in action_lower:
+            post["errors"] = _clamp(errors * 0.3)
+            post["cpu"] = _clamp(cpu + 0.1)
+            return "restarting healthy workers addresses transient pod issues"
+        if "verify" in action_lower or "failover" in action_lower or "switch" in action_lower:
+            post["errors"] = _clamp(errors * 0.2)
+            post["latency_p99"] = max(0, float(post.get("latency_p99", 0)) * 0.5)
+            return "verifying connectivity and failing over to the backup PSP restores payment flow"
+        if "rollback" in action_lower:
+            post["cpu"] = _clamp(cpu * 0.6)
+            post["errors"] = _clamp(errors * 0.3)
+            return "rolling back to the stable version resolves the deployment-induced regression"
+
+    # Generic positive: scaling-like actions are assumed modestly beneficial.
+    if any(op in action_lower for op in ("scale", "requeue", "add", "increase")):
+        post["errors"] = _clamp(errors * 0.8)
+        post["cpu"] = _clamp(cpu + 0.05)
+        return "scaling-like action modestly reduces errors"
+
+    post["errors"] = _clamp(errors * 0.9)
+    return "action appears safe but has limited modeled effect on metrics"
+
+
+def _apply_harm(post: dict[str, Any], forbidden_matches: list[str]) -> str:
+    """Harmful sub-actions override otherwise positive compound actions."""
+    errors = float(post.get("errors", 0.0))
+    queue_depth = float(post.get("queue_depth", 0.0))
+    action_lower = " ".join(forbidden_matches).lower()
+
+    if "database" in action_lower and "restart" in action_lower:
+        post["errors"] = _clamp(errors + 0.2)
+        post["queue_depth"] = queue_depth * 1.5
+        return "restarting the database during an incident causes more downtime"
+
+    if any(term in action_lower for term in ["delete", "refund", "drop", "wipe"]):
+        post["errors"] = _clamp(errors + 0.3)
+        post["queue_depth"] = max(0.0, queue_depth - queue_depth)
+        return "action involves destructive data loss and severely worsens reliability"
+
+    post["errors"] = _clamp(errors + 0.1)
+    return "action contains a forbidden operation and is predicted to worsen reliability"
 
 
 def _health_score(metrics: dict[str, Any]) -> float:
@@ -32,10 +101,12 @@ def _health_score(metrics: dict[str, Any]) -> float:
 
 
 def simulate_action(service: str, action: str, metrics: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Simulate the effect of a proposed remediation action on service metrics.
+    """Predict the effect of a proposed remediation action on service metrics.
 
-    The simulation is keyword-driven and deterministic. It returns the expected
-    post-action metrics, a health score delta, and a human-readable verdict.
+    The simulator is a predictive screen, not execution validation. It uses the
+    shared action-rule evaluator to determine whether the action is safe, then
+    applies a service-specific metric transform. Harmful sub-actions override
+    otherwise positive phrases.
     """
     if metrics is None:
         fixture = _load_fixture(service, "metrics")
@@ -46,102 +117,30 @@ def simulate_action(service: str, action: str, metrics: dict[str, Any] | None = 
     reasoning_parts: list[str] = []
     improved: bool | None = None
 
-    # Normalize numeric fields.
-    queue_depth = float(post.get("queue_depth", 0.0))
-    errors = float(post.get("errors", 0.0))
-    cpu = float(post.get("cpu", 0.0))
-    memory = float(post.get("memory", 0.0))
-
-    # High-confidence harmful keywords override everything.
-    if _contains(action_lower, "delete", "refund", "drop", "wipe"):
-        post["errors"] = _clamp(errors + 0.3)
-        post["queue_depth"] = max(0.0, queue_depth - queue_depth)  # data loss "clears" queue
-        reasoning_parts.append("action involves destructive data loss, which severely worsens reliability")
+    # Broad destructive keywords are always forbidden, even if the action rule does not list them.
+    broad_forbidden = ["delete", "refund", "drop", "wipe"]
+    if any(_phrase_matches(action, term) for term in broad_forbidden):
+        result = evaluate_action(action, {"required": [], "forbidden": broad_forbidden, "allowed_supplemental": []})
+        reasoning_parts.append(_apply_harm(post, result["forbidden_matches"]))
         improved = False
-
-    # notification-service / queue backlog patterns.
-    elif service == "notification-service" or queue_depth > 0:
-        if "database" in action_lower and "restart" in action_lower:
-            post["queue_depth"] = queue_depth * 1.5
-            post["errors"] = _clamp(errors + 0.2)
-            reasoning_parts.append("restarting the database during a queue backlog is harmful")
-            improved = False
-        elif _contains(action_lower, "delete", "refund", "drop", "wipe"):
-            post["queue_depth"] = max(0.0, queue_depth)
-            post["errors"] = _clamp(errors + 0.3)
-            reasoning_parts.append("action involves destructive data loss and worsens reliability")
-            improved = False
-        elif _contains(action_lower, "scale", "requeue", "worker", "horizontal"):
-            post["queue_depth"] = max(0.0, queue_depth * 0.2)
-            post["cpu"] = _clamp(cpu + 0.15)
-            post["memory"] = _clamp(memory + 0.05)
-            reasoning_parts.append("scaling workers and requeueing drains the backlog without dropping messages")
-            improved = True
-        elif _contains(action_lower, "restart"):
-            post["queue_depth"] = queue_depth * 1.3
-            post["errors"] = _clamp(errors + 0.05)
-            reasoning_parts.append("restarting pods during a backlog spike temporarily reduces throughput and worsens the queue")
-            improved = False
-        else:
-            post["queue_depth"] = queue_depth * 0.9
-            reasoning_parts.append("action has limited effect on queue backlog")
-            improved = queue_depth * 0.9 < queue_depth
-
-    # cart-service / payment-service checkout patterns.
-    elif service in ("cart-service", "payment-service"):
-        # Harmful sub-actions must be detected even inside otherwise positive phrases.
-        if "database" in action_lower and "restart" in action_lower:
-            post["errors"] = _clamp(errors + 0.2)
-            post["cpu"] = _clamp(cpu + 0.2)
-            reasoning_parts.append("restarting the database during checkout failures causes more downtime")
-            improved = False
-        elif _contains(action_lower, "delete", "refund", "drop", "wipe"):
-            post["errors"] = _clamp(errors + 0.3)
-            reasoning_parts.append("action involves destructive data loss and worsens reliability")
-            improved = False
-        elif ("scale redis" in action_lower or "scale cache" in action_lower
-                or "restart cart workers" in action_lower or "restart payment workers" in action_lower
-                or "scale workers" in action_lower):
-            post["errors"] = _clamp(errors * 0.2)
-            post["cpu"] = _clamp(cpu + 0.1)
-            reasoning_parts.append("scaling Redis/workers addresses checkout latency and drops error rate")
-            improved = True
-        elif "restart" in action_lower and ("worker" in action_lower or "workers" in action_lower):
-            post["errors"] = _clamp(errors * 0.3)
-            post["cpu"] = _clamp(cpu + 0.1)
-            reasoning_parts.append("restarting healthy workers addresses transient pod issues")
-            improved = True
-        elif "restart" in action_lower:
-            post["errors"] = _clamp(errors * 0.9)
-            post["cpu"] = _clamp(cpu + 0.05)
-            reasoning_parts.append("service restart may temporarily relieve pressure but does not fix root cause")
-            improved = True
-        else:
-            reasoning_parts.append("action has unclear effect on checkout failures")
-            improved = False
-
     else:
-        # Generic fallback: conservative, assumes no improvement unless explicitly scaling.
-        if _contains(action_lower, "scale", "requeue", "add"):
-            post["errors"] = _clamp(errors * 0.8)
-            post["cpu"] = _clamp(cpu + 0.05)
-            reasoning_parts.append("scaling-like action modestly reduces errors")
-            improved = True
-        elif _contains(action_lower, "restart"):
-            post["errors"] = _clamp(errors + 0.05)
-            reasoning_parts.append("restart risks transient downtime")
+        rule_id = _service_rule_id(service)
+        result = evaluate_action(action, rule_id)
+
+        if result["forbidden_matches"]:
+            reasoning_parts.append(_apply_harm(post, result["forbidden_matches"]))
             improved = False
+        elif result["safe"]:
+            reasoning_parts.append(_apply_benefit(post, service, result["matched_operations"]))
+            improved = True
         else:
-            reasoning_parts.append("cannot determine improvement from action keywords")
+            # An unrecognized or incomplete action is treated as not improving.
+            reasoning_parts.append(f"action did not match the expected recovery pattern: {', '.join(result['reason_codes'])}")
             improved = False
 
     before_score = _health_score(metrics)
     after_score = _health_score(post)
     delta = after_score - before_score
-
-    # If we didn't explicitly set improved, derive it from score delta.
-    if improved is None:
-        improved = delta > 0
 
     return {
         "service": service,

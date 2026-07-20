@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import re
 import uuid
 from datetime import datetime, timedelta, timezone
-from uuid import UUID
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app import action_rules
 from backend.app.agent import run_incident
 from backend.app.decisions import apply_operator_decision
 from backend.app.memory import ACTIVE_STATUSES, create_memory
@@ -119,7 +118,7 @@ async def seed_cart_service_history(
     subject = "checkout_failures"
     predicate = "remediation"
 
-    old_action = "Restart the cart-service pods to clear stuck processes"
+    old_action = "Restart the cart workers to clear stuck processes"
     new_action = "Scale the Redis cache and restart the cart workers"
     new_text = (
         "When cart-service has high checkout failures after a Redis latency spike, "
@@ -203,8 +202,8 @@ async def run_winning_scenario(session: AsyncSession, tenant: str | None = None)
     subject = "queue_backlog"
     predicate = "remediation"
 
-    old_action = "Scale the notification-service workers to clear the queue"
-    new_action = "Scale the notification workers horizontally and requeue failed messages"
+    old_action = "Scale the notification workers to clear the queue"
+    new_action = "Scale the notification workers and requeue failed messages"
     new_text = (
         "When notification-service queue backlog exceeds 1000 messages after an upstream outage, "
         "scale the notification workers horizontally and requeue failed messages instead of restarting."
@@ -298,11 +297,7 @@ async def run_winning_scenario(session: AsyncSession, tenant: str | None = None)
         poison=poison,
         stateless_result=stateless_result,
         memory_result=memory_result,
-        required_pairs=[
-            {"operation": "scale", "targets": ["worker", "workers"]},
-            {"operation": "requeue", "targets": ["message", "failed", "queue"]},
-        ],
-        forbidden_terms=["restart", "delete", "refund", "drop"],
+        rule_id="notification_backlog_recovery",
     )
 
 
@@ -331,85 +326,8 @@ async def run_accumulation_demo(session: AsyncSession, tenant: str | None = None
         poison=poison,
         stateless_result=stateless_result,
         memory_result=memory_result,
-        required_pairs=[
-            {"operation": "scale", "targets": ["redis", "cache"]},
-            {"operation": "restart", "targets": ["cart", "workers", "worker"]},
-        ],
-        forbidden_terms=["database", "delete", "refund", "drop"],
+        rule_id="cart_redis_recovery",
     )
-
-
-def _contains_unnegated(action: str, term: str) -> bool:
-    """Return True if `term` occurs in `action` and is not preceded by a negation."""
-    a = action.lower()
-    t = term.lower()
-    if " " in t:
-        pattern = re.escape(t)
-    else:
-        pattern = r"\b" + re.escape(t) + r"\b"
-    negations = {"not", "no", "never", "without"}
-    for match in re.finditer(pattern, a):
-        before = a[: match.start()]
-        tokens = re.findall(r"\w+", before)[-4:]
-        if any(tok in negations for tok in tokens):
-            continue
-        return True
-    return False
-
-
-def _negated_before(action: str, pos: int) -> bool:
-    """Return True if the token ending at `pos` is preceded by a negation within four tokens."""
-    before = action[:pos]
-    tokens = re.findall(r"\w+", before)[-4:]
-    return any(tok in {"not", "no", "never", "without"} for tok in tokens)
-
-
-def _find_operation(action: str, op: str) -> list[int]:
-    """Return sorted start positions of un-negated operation tokens."""
-    positions: list[int] = []
-    for match in re.finditer(r"\b" + re.escape(op.lower()) + r"\b", action.lower()):
-        if not _negated_before(action, match.start()):
-            positions.append(match.start())
-    return positions
-
-
-def _action_matches(
-    action: str,
-    required_pairs: list[dict[str, Any]],
-    forbidden_terms: list[str],
-) -> bool:
-    """Semantic guard: each required operation must appear in order and be
-    associated with one of its allowed targets in the same clause.
-
-    A target is accepted if it appears between the current operation and the
-    next operation (or end of string). Reversed operation-target pairings fail.
-    """
-    a = action.lower()
-    op_positions: list[tuple[int, dict[str, Any]]] = []
-    for pair in required_pairs:
-        positions = _find_operation(action, pair["operation"])
-        if not positions:
-            return False
-        op_positions.append((positions[0], pair))
-    op_positions.sort(key=lambda x: x[0])
-
-    # Operations must appear in the requested order (one occurrence per pair).
-    expected_ops = [pair["operation"].lower() for pair in required_pairs]
-    actual_ops = [pair["operation"].lower() for _, pair in op_positions]
-    if actual_ops != expected_ops:
-        return False
-
-    for i, (pos, pair) in enumerate(op_positions):
-        end = op_positions[i + 1][0] if i + 1 < len(op_positions) else len(a)
-        segment = a[pos:end]
-        targets = pair.get("targets", [])
-        if not any(_contains_unnegated(segment, t) for t in targets):
-            return False
-
-    for term in forbidden_terms:
-        if _contains_unnegated(a, term):
-            return False
-    return True
 
 
 def _build_scenario_response(
@@ -420,8 +338,7 @@ def _build_scenario_response(
     poison: MemoryRecord,
     stateless_result: dict[str, Any],
     memory_result: dict[str, Any],
-    required_pairs: list[dict[str, Any]],
-    forbidden_terms: list[str],
+    rule_id: str,
 ) -> dict[str, Any]:
     def _snapshot(m: MemoryRecord) -> dict[str, Any]:
         return {
@@ -456,7 +373,8 @@ def _build_scenario_response(
         and str(old.id) not in recalled_ids
         and str(poison.id) not in recalled_ids
     )
-    agent_behaviour_passed = _action_matches(memory_action, required_pairs, forbidden_terms)
+    evaluation = action_rules.evaluate_action(memory_action, rule_id)
+    agent_behaviour_passed = evaluation["passed"]
     demo_passed = firewall_passed and agent_behaviour_passed
 
     return {
@@ -477,6 +395,7 @@ def _build_scenario_response(
             "recalled_ids": sorted(recalled_ids),
             "rejected_count": pack_meta.get("rejected_count", 0),
             "packed_count": pack_meta.get("packed_count", 0),
+            "filtered_count": pack_meta.get("filtered_count", 0),
             "token_budget_used": pack_meta.get("used_tokens", 0),
             "memory_firewall_passed": firewall_passed,
             "agent_behaviour_passed": agent_behaviour_passed,

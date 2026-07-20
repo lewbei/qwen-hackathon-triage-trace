@@ -17,11 +17,10 @@ from backend.app.config import settings
 from backend.app.decisions import apply_operator_decision
 from backend.app.demo import (
     _scenario_tenant,
-    build_cart_service_alert,
     run_accumulation_demo,
     run_winning_scenario,
-    seed_cart_service_history,
 )
+from backend.app.demo_scenarios import get_scenario, get_scenarios, seed_demo_scenario
 from backend.app.memory import create_memory, get_memory_lineage
 from backend.app.models import AsyncSessionLocal, MemoryRecord, RunRecord, get_db
 from backend.app.schemas import (
@@ -572,13 +571,41 @@ async def accumulation(
     return result
 
 
+@app.get("/api/demo/scenarios")
+async def list_demo_scenarios() -> list[dict[str, Any]]:
+    """Return the server-owned demo scenario catalog."""
+    return get_scenarios()
+
+
+@app.post("/api/demo/setup/{scenario_id}")
+async def setup_demo_scenario(
+    scenario_id: str,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Seed the caller's demo tenant with the requested scenario history.
+
+    Each public visitor gets an isolated demo tenant via a cookie, so one visitor
+    cannot reset another's demo state. The endpoint is rate-limited per IP.
+    """
+    try:
+        get_scenario(scenario_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Scenario not found")
+    if not _write_limiter.allow(_client_ip(request)):
+        raise HTTPException(status_code=429, detail="Too many setup requests. Please wait a minute.")
+    tenant = _public_tenant(request, response)
+    return await seed_demo_scenario(db, scenario_id, tenant=tenant)
+
+
 @app.post("/api/demo/setup")
 async def setup_production_demo(
     request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """Seed the caller's demo tenant with the cart-service production demo history.
+    """Seed the caller's demo tenant with the default cart-service scenario.
 
     Each public visitor gets an isolated demo tenant via a cookie, so one visitor
     cannot reset another's demo state. The endpoint is rate-limited per IP.
@@ -586,15 +613,5 @@ async def setup_production_demo(
     if not _write_limiter.allow(_client_ip(request)):
         raise HTTPException(status_code=429, detail="Too many setup requests. Please wait a minute.")
     tenant = _public_tenant(request, response)
-    old, new, poison, alert = await seed_cart_service_history(db, tenant)
-    return {
-        "status": "seeded",
-        "tenant": tenant,
-        "alert": alert.model_dump(),
-        "memories": {
-            "old": {"id": str(old.id), "status": old.status, "content": old.content},
-            "new": {"id": str(new.id), "status": new.status, "content": new.content},
-            "poison": {"id": str(poison.id), "status": poison.status, "content": poison.content},
-        },
-    }
+    return await seed_demo_scenario(db, "cart-redis-latency", tenant=tenant)
 

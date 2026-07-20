@@ -1,39 +1,23 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { Alert, DecisionResult, Deployment, Incident, Memory, RunOut, Signal } from './types'
+import type { Alert, DecisionResult, DemoScenario, Deployment, Incident, Memory, RunOut, Signal } from './types'
+import ScenarioSelector from './ScenarioSelector'
 import SequenceWalkthrough from './SequenceWalkthrough'
 
-const TENANT = 'default'
-const SERVICE = 'cart-service'
+const DEFAULT_TENANT = 'default'
 
-const INCIDENT: Incident = {
-  id: 'cart-redis-latency',
-  service: SERVICE,
-  title: 'Checkout latency spike after Redis rollout',
-  severity: 'sev1',
-  alert: 'High checkout failure rate and slow response times',
-  customerImpact:
-    'Customers are seeing checkout timeouts; conversion is dropping in the NA region.',
-  owner: 'payments-platform',
-  constraints: [
-    'Do not restart the payment database.',
-    'Human approval is required before scaling production infra.',
-    'Preserve audit logs for finance reconciliation.',
-  ],
-  recentChanges: [
-    'Redis cache tier rolled from local LRU to regional cluster',
-    'cart-2.3.1 feature flag raised to 60% and rolled back',
-  ],
-  signals: [
-    { source: 'logs', name: 'redis timeout', value: 'ETIMEDOUT redis-cart:6379', status: 'critical' },
-  ],
-}
-
-const ALERT: Alert = {
-  tenant: TENANT,
-  service: SERVICE,
-  symptom: 'Redis timeout causing high checkout failure rate',
-  severity: 'critical',
-  context: 'Logs show ETIMEDOUT redis-cart:6379. Last rollout: cart-2.3.1 (rolled_back). Checkout failures exceeded 40 per minute.',
+function emptyIncident(): Incident {
+  return {
+    id: '',
+    service: '',
+    title: '',
+    severity: 'sev2',
+    alert: '',
+    customerImpact: '',
+    owner: '',
+    constraints: [],
+    recentChanges: [],
+    signals: [],
+  }
 }
 
 function statusClass(status: string) {
@@ -63,10 +47,6 @@ function shortDate(iso: string) {
 
 function truncate(text: string, max: number) {
   return text.length > max ? text.slice(0, max - 1) + '…' : text
-}
-
-function formatValue(value: number | undefined, unit: string) {
-  return value === undefined ? '-' : `${Math.round(value)}${unit}`
 }
 
 function memoryLabel(m: Memory) {
@@ -194,7 +174,10 @@ const rubricEvidence = [
 export default function TriageDashboard() {
   const [memories, setMemories] = useState<Memory[]>([])
   const [runbook, setRunbook] = useState<string>('')
-  const [incident, setIncident] = useState<Incident>(INCIDENT)
+  const [incident, setIncident] = useState<Incident>(emptyIncident())
+  const [scenarios, setScenarios] = useState<DemoScenario[]>([])
+  const [selectedScenarioId, setSelectedScenarioId] = useState<string | null>(null)
+  const [scenario, setScenario] = useState<DemoScenario | null>(null)
   const [memoryRun, setMemoryRun] = useState<RunOut | null>(null)
   const [statelessRun, setStatelessRun] = useState<RunOut | null>(null)
   const [decision, setDecision] = useState<DecisionResult | null>(null)
@@ -203,76 +186,105 @@ export default function TriageDashboard() {
   const [statelessRunning, setStatelessRunning] = useState(false)
   const [deciding, setDeciding] = useState(false)
   const [loadingSnapshot, setLoadingSnapshot] = useState(true)
+  const [loadingScenarios, setLoadingScenarios] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [feedback, setFeedback] = useState('')
 
   const loadMemories = async () => {
-    const data = await api<Memory[]>(`/api/memories?tenant=${TENANT}`)
+    const data = await api<Memory[]>(`/api/memories?tenant=${DEFAULT_TENANT}`)
     setMemories(data)
     return data
   }
 
-  const buildIncident = (m: { cpu?: number; latency_p99?: number; checkout_failures?: number } | null, d: { last_deployments: Deployment[] } | null) => {
-    const signals: Signal[] = [
-      { source: 'logs', name: 'redis timeout', value: 'ETIMEDOUT redis-cart:6379', status: 'critical' },
-    ]
-    if (m) {
-      signals.unshift({
-        source: 'metrics',
-        name: 'checkout failures/min',
-        value: String(m.checkout_failures ?? '-'),
-        status: m.checkout_failures && m.checkout_failures > 30 ? 'critical' : 'warning',
-      })
-      signals.unshift({
-        source: 'metrics',
-        name: 'p99 latency',
-        value: formatValue(m.latency_p99, 'ms'),
-        status: m.latency_p99 && m.latency_p99 > 2000 ? 'critical' : 'warning',
-      })
-      signals.unshift({
-        source: 'metrics',
-        name: 'cpu',
-        value: formatValue(m.cpu ? m.cpu * 100 : undefined, '%'),
-        status: m.cpu && m.cpu > 0.8 ? 'warning' : 'ok',
-      })
-    }
-    if (d && d.last_deployments.length) {
-      const latest = d.last_deployments[0]
-      signals.push({
-        source: 'deploy',
-        name: 'last rollout',
-        value: `${latest.version} (${latest.status})`,
-        status: latest.status === 'rolled_back' ? 'warning' : 'ok',
-      })
-    }
-    setIncident((prev) => ({ ...prev, signals }))
+  function statusForValue(value: number, threshold?: number): Signal['status'] {
+    if (threshold === undefined) return 'ok'
+    if (value > threshold) return 'critical'
+    if (value > threshold * 0.75) return 'warning'
+    return 'ok'
   }
 
-  const loadSnapshot = async () => {
+  function formatMetric(raw: unknown, unit: string): string {
+    if (raw === undefined || raw === null) return '-'
+    if (typeof raw === 'boolean') return raw ? 'yes' : 'no'
+    if (typeof raw === 'number') {
+      if (unit === '%') return `${Math.round(raw * 100)}%`
+      return `${Math.round(raw)}${unit}`
+    }
+    return String(raw)
+  }
+
+  const buildSignals = (
+    metrics: Record<string, unknown> | null,
+    deployRes: { last_deployments: Deployment[] } | null,
+    scenario: DemoScenario | null
+  ): Signal[] => {
+    if (!scenario) return []
+    const signals: Signal[] = [...(scenario.incident.signals ?? [])]
+    const metricDefs = scenario.metricSignals ?? []
+    for (const def of metricDefs) {
+      if (def.source === 'metrics' && metrics) {
+        const raw = metrics[def.metric_key]
+        if (raw === undefined) continue
+        const value = typeof raw === 'number' ? raw : typeof raw === 'boolean' ? (raw ? 1 : 0) : NaN
+        const status = Number.isNaN(value) ? (def.status ?? 'ok') : statusForValue(value, def.severity_threshold)
+        signals.push({
+          source: 'metrics',
+          name: def.name,
+          value: formatMetric(raw, def.unit),
+          status,
+        })
+      } else if (def.source === 'deploy' && deployRes?.last_deployments?.length) {
+        const latest = deployRes.last_deployments[0]
+        const raw = ((latest as unknown) as Record<string, unknown>)[def.metric_key]
+        const status: Signal['status'] = latest.status === 'rolled_back' || latest.status === 'failed' ? 'warning' : 'ok'
+        signals.push({
+          source: 'deploy',
+          name: def.name,
+          value: formatMetric(raw, def.unit),
+          status,
+        })
+      }
+    }
+    return signals
+  }
+
+  const buildIncident = (
+    metrics: Record<string, unknown> | null,
+    deployRes: { last_deployments: Deployment[] } | null,
+    activeScenario?: DemoScenario
+  ) => {
+    const sc = activeScenario ?? scenario
+    if (!sc) return
+    setIncident({ ...sc.incident, signals: buildSignals(metrics, deployRes, sc) })
+  }
+
+  const loadSnapshot = async (activeScenario?: DemoScenario) => {
+    const sc = activeScenario ?? scenario
+    if (!sc) return
     setLoadingSnapshot(true)
     setError(null)
     try {
       const [mems, metricsRes, deployRes, runbookRes] = await Promise.all([
         loadMemories(),
-        api<{ result: { cpu: number; latency_p99: number; checkout_failures: number } }>('/api/skills/inspect_metrics/invoke', {
+        api<{ result: Record<string, unknown> }>('/api/skills/inspect_metrics/invoke', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ service: SERVICE, time_window: '1h' }),
+          body: JSON.stringify({ service: sc.service, time_window: '1h' }),
         }),
         api<{ result: { last_deployments: Deployment[] } }>('/api/skills/list_recent_deployments/invoke', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ service: SERVICE }),
+          body: JSON.stringify({ service: sc.service }),
         }),
         api<{ result: { runbook: string } }>('/api/skills/read_current_runbook/invoke', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ service: SERVICE }),
+          body: JSON.stringify({ service: sc.service }),
         }),
       ])
       setMemories(mems)
       setRunbook(runbookRes.result.runbook)
-      buildIncident(metricsRes.result, deployRes.result)
+      buildIncident(metricsRes.result, deployRes.result, sc)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -280,16 +292,14 @@ export default function TriageDashboard() {
     }
   }
 
-  useEffect(() => {
-    loadSnapshot()
-  }, [])
-
-  const initializeDemo = async () => {
+  const initializeScenario = async (id: string) => {
     setInitializing(true)
     setError(null)
     try {
-      await api('/api/demo/setup', { method: 'POST' })
-      await loadSnapshot()
+      const data = await api<DemoScenario>(`/api/demo/setup/${id}`, { method: 'POST' })
+      setScenario(data)
+      setIncident({ ...data.incident, signals: [] })
+      await loadSnapshot(data)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -297,7 +307,42 @@ export default function TriageDashboard() {
     }
   }
 
+  const loadScenarios = async () => {
+    setLoadingScenarios(true)
+    setError(null)
+    try {
+      const data = await api<DemoScenario[]>('/api/demo/scenarios')
+      setScenarios(data)
+      const defaultId = data.find((s) => s.id === 'cart-redis-latency')?.id ?? data[0]?.id ?? null
+      if (defaultId && !selectedScenarioId) {
+        setSelectedScenarioId(defaultId)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setLoadingScenarios(false)
+    }
+  }
+
+  useEffect(() => {
+    loadScenarios()
+  }, [])
+
+  useEffect(() => {
+    if (selectedScenarioId) {
+      setMemoryRun(null)
+      setStatelessRun(null)
+      setDecision(null)
+      setFeedback('')
+      setIncident(emptyIncident())
+      setScenario(null)
+      initializeScenario(selectedScenarioId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedScenarioId])
+
   const runBothTriages = async () => {
+    if (!scenario) return
     setMemoryRun(null)
     setStatelessRun(null)
     setDecision(null)
@@ -305,16 +350,17 @@ export default function TriageDashboard() {
     setStatelessRunning(true)
     setError(null)
     try {
+      const alert: Alert = { ...scenario.alert, tenant: DEFAULT_TENANT }
       const [stateless, memory] = await Promise.all([
         api<RunOut>(`/api/agent/runs?mode=stateless`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(ALERT),
+          body: JSON.stringify(alert),
         }),
         api<RunOut>(`/api/agent/runs?mode=memory`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(ALERT),
+          body: JSON.stringify(alert),
         }),
       ])
       setStatelessRun(stateless)
@@ -352,8 +398,11 @@ export default function TriageDashboard() {
   }, [memoryRun, memories])
 
   const filteredMemories = useMemo(
-    () => memories.filter((m) => m.scope === SERVICE && m.subject === 'checkout_failures'),
-    [memories]
+    () =>
+      scenario
+        ? memories.filter((m) => m.scope === scenario.service && m.subject === scenario.memorySubject)
+        : [],
+    [memories, scenario]
   )
 
   const timeline = useMemo(
@@ -395,16 +444,24 @@ export default function TriageDashboard() {
           <IconDot label="TT" tone="indigo" />
           <div>
             <h1 className="text-lg font-bold leading-tight">TriageTrace</h1>
-            <p className="text-xs text-slate-400">Incident command center — cart-service checkout failures</p>
+            <p className="text-xs text-slate-400">
+              {scenario ? `Incident command center — ${scenario.service}` : 'Incident command center'}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <ScenarioSelector
+            scenarios={scenarios}
+            selectedId={selectedScenarioId}
+            onSelect={setSelectedScenarioId}
+            disabled={loadingScenarios || initializing || running || statelessRunning || deciding}
+          />
           <span className="text-xs bg-slate-800 px-2 py-1 rounded text-slate-300">Qwen Cloud demo</span>
           {memories.length === 0 ? (
             <button
               className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-50"
-              onClick={initializeDemo}
-              disabled={initializing}
+              onClick={() => selectedScenarioId && initializeScenario(selectedScenarioId)}
+              disabled={initializing || !selectedScenarioId}
             >
               {initializing ? 'Initializing…' : 'Initialize demo'}
             </button>
@@ -412,7 +469,7 @@ export default function TriageDashboard() {
             <button
               className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-50"
               onClick={runBothTriages}
-              disabled={running || statelessRunning}
+              disabled={running || statelessRunning || !scenario}
             >
               {running || statelessRunning ? 'Running both modes…' : 'Run both triage modes'}
             </button>
@@ -425,16 +482,31 @@ export default function TriageDashboard() {
           <div className="bg-rose-50 border-l-4 border-rose-500 p-4 rounded text-rose-800 text-sm">{error}</div>
         )}
 
-        {memories.length === 0 && !loadingSnapshot && !initializing && (
+        {loadingScenarios && (
+          <div className="bg-white rounded-lg shadow p-12 text-center">
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+            <p className="mt-4 text-slate-600">Loading scenarios…</p>
+          </div>
+        )}
+
+        {!loadingScenarios && scenarios.length === 0 && (
+          <div className="bg-white rounded-lg shadow p-8 text-center">
+            <h2 className="text-xl font-semibold text-slate-800 mb-2">No scenarios available</h2>
+            <p className="text-slate-600 max-w-2xl mx-auto">The demo scenario catalog could not be loaded.</p>
+          </div>
+        )}
+
+        {!loadingScenarios && selectedScenarioId && memories.length === 0 && !loadingSnapshot && !initializing && (
           <div className="bg-white rounded-lg shadow p-8 text-center">
             <h2 className="text-xl font-semibold text-slate-800 mb-2">No incident memory loaded</h2>
             <p className="text-slate-600 max-w-2xl mx-auto mb-6">
-              Initialize the cart-service demo to seed the memory firewall: an older procedure that was superseded,
+              Initialize the demo to seed the memory firewall: an older procedure that was superseded,
               the current approved procedure, and a quarantined poison attempt.
             </p>
             <button
               className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded font-medium"
-              onClick={initializeDemo}
+              onClick={() => initializeScenario(selectedScenarioId)}
+              disabled={!selectedScenarioId}
             >
               Initialize production demo
             </button>
@@ -858,7 +930,7 @@ export default function TriageDashboard() {
                     <IconDot label="PL" tone="indigo" /> Triage pipeline
                   </h2>
                   <div className="space-y-3">
-                    <Stage label="A" title="Alert" subtitle={INCIDENT.alert} active={!memoryRun} done={Boolean(memoryRun)} />
+                    <Stage label="A" title="Alert" subtitle={incident.alert} active={!memoryRun} done={Boolean(memoryRun)} />
                     <Stage label="R" title="Recall" subtitle={memoryPack ? `${memoryPack.packed_count} memory packed` : 'memory firewall'} active={Boolean(memoryRun && !memoryRun.proposal)} done={Boolean(memoryPack)} />
                     <Stage label="R" title="Reason" subtitle={memoryRun?.proposal?.action ? 'Qwen proposed action' : 'Qwen reasoning'} active={Boolean(memoryRun?.proposal)} done={Boolean(memoryRun?.proposal)} />
                     <Stage label="D" title="Decide" subtitle={decision ? decision.status : 'operator approval'} active={Boolean(memoryRun?.proposal?.status === 'pending')} done={Boolean(decision)} />

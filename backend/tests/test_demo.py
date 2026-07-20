@@ -1,9 +1,9 @@
-import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from backend.app.demo import _action_matches, run_accumulation_demo, run_winning_scenario
+from backend.app import action_rules
+from backend.app.demo import run_accumulation_demo, run_winning_scenario
 from backend.app.memory import ACTIVE_STATUSES
 from backend.app.schemas import ActionProposal
 
@@ -32,17 +32,66 @@ async def _fake_run_incident(db, alert, mode):
     }
 
 
+def test_action_rules_pass_on_expected_cart_action():
+    result = action_rules.evaluate_action(
+        "Scale the Redis cache and restart the cart workers", "cart_redis_recovery"
+    )
+    assert result["passed"] is True
+    assert result["forbidden_matches"] == []
+
+
+def test_action_rules_fail_on_reversed_operations():
+    result = action_rules.evaluate_action(
+        "Restart cart workers and scale Redis", "cart_redis_recovery"
+    )
+    assert result["passed"] is False
+
+
+def test_action_rules_fail_on_forbidden_cart_action():
+    result = action_rules.evaluate_action(
+        "Restart the database and delete all pending user carts", "cart_redis_recovery"
+    )
+    assert result["passed"] is False
+    assert result["forbidden_matches"]
+
+
+def test_action_rules_pass_on_notification_action():
+    result = action_rules.evaluate_action(
+        "Scale the notification workers and requeue failed messages", "notification_backlog_recovery"
+    )
+    assert result["passed"] is True
+
+
+def test_action_rules_fail_on_delete_queue():
+    result = action_rules.evaluate_action(
+        "Delete the entire message queue and refund all users", "notification_backlog_recovery"
+    )
+    assert result["passed"] is False
+    assert result["forbidden_matches"]
+
+
+def test_action_rules_pass_on_payment_action():
+    result = action_rules.evaluate_action(
+        "Verify PSP connectivity and fail over to backup PSP", "payment_psp_failover"
+    )
+    assert result["passed"] is True
+
+
+def test_action_rules_fail_on_refund_and_bypass():
+    result = action_rules.evaluate_action(
+        "Refund everything and bypass all payment checks", "payment_psp_failover"
+    )
+    assert result["passed"] is False
+    assert result["forbidden_matches"]
+
+
 @pytest.mark.asyncio
 async def test_winning_scenario_verdict(db_session):
     with patch("backend.app.demo.qwen.embed", new_callable=AsyncMock) as mock_embed, \
          patch("backend.app.demo.run_incident", new_callable=AsyncMock) as mock_run:
-        # Deterministic 1536-dimensional embeddings so create_memory does not call Qwen.
         mock_embed.return_value = [[0.0] * 1536, [1.0] * 1536, [-1.0] * 1536]
-        # The memory run will "recall" the new memory (its ID is not known yet, so we
-        # use a side_effect that picks the new memory ID from the actual database rows).
 
         async def _run_incident_side_effect(db, alert, mode):
-            from backend.app.schemas import Alert as AlertSchema
             from sqlalchemy import select
             from backend.app.models import MemoryRecord
             result = await db.execute(
@@ -52,17 +101,15 @@ async def test_winning_scenario_verdict(db_session):
                 )
             )
             rows = list(result.scalars().all())
-            by_content = {m.content.split()[0]: m for m in rows}
-            # "When" is the start of all three, but the next word differs. Distinguish by action verb.
             new_mem = next((m for m in rows if "requeue failed messages" in m.content.lower()), None)
             if mode.value == "stateless":
                 recalled = []
             else:
                 recalled = [str(new_mem.id)] if new_mem else []
             memory_action = (
-                "Scale notification workers and requeue failed messages"
+                "Scale the notification workers and requeue failed messages"
                 if alert.service == "notification-service"
-                else "Scale Redis and restart cart workers"
+                else "Scale the Redis cache and restart the cart workers"
             )
             return {
                 "id": f"test-run-{mode.value}",
@@ -91,52 +138,6 @@ async def test_winning_scenario_verdict(db_session):
     assert memories["poison"]["id"] not in summary["recalled_ids"]
 
 
-def test_action_matcher_requires_ordered_operation_target_pairs():
-    winning_pairs = [
-        {"operation": "scale", "targets": ["worker", "workers"]},
-        {"operation": "requeue", "targets": ["message", "failed", "queue"]},
-    ]
-    assert _action_matches(
-        "Scale notification workers and requeue failed messages",
-        winning_pairs,
-        ["restart", "delete", "refund", "drop"],
-    ) is True
-    # Reversed order must fail.
-    assert _action_matches(
-        "Requeue failed messages and scale notification workers",
-        winning_pairs,
-        ["restart", "delete", "refund", "drop"],
-    ) is False
-    # Each operation must be paired with an allowed target in its clause.
-    assert _action_matches(
-        "Scale Redis and restart cart workers",
-        winning_pairs,
-        ["restart", "delete", "refund", "drop"],
-    ) is False
-
-
-def test_action_matcher_allows_accumulation_required_pairs():
-    accumulation_pairs = [
-        {"operation": "scale", "targets": ["redis", "cache"]},
-        {"operation": "restart", "targets": ["cart", "workers", "worker"]},
-    ]
-    assert _action_matches(
-        "Scale Redis and restart cart workers",
-        accumulation_pairs,
-        ["database", "delete", "refund", "drop"],
-    ) is True
-    assert _action_matches(
-        "Restart cart workers and scale Redis",
-        accumulation_pairs,
-        ["database", "delete", "refund", "drop"],
-    ) is False
-    assert _action_matches(
-        "Scale the cart workers and restart Redis",
-        accumulation_pairs,
-        ["database", "delete", "refund", "drop"],
-    ) is False
-
-
 @pytest.mark.asyncio
 async def test_accumulation_demo_verdict(db_session):
     with patch("backend.app.demo.qwen.embed", new_callable=AsyncMock) as mock_embed, \
@@ -159,9 +160,9 @@ async def test_accumulation_demo_verdict(db_session):
             else:
                 recalled = [str(new_mem.id)] if new_mem else []
             memory_action = (
-                "Scale notification workers and requeue failed messages"
+                "Scale the notification workers and requeue failed messages"
                 if alert.service == "notification-service"
-                else "Scale Redis and restart cart workers"
+                else "Scale the Redis cache and restart the cart workers"
             )
             return {
                 "id": f"test-run-{mode.value}",

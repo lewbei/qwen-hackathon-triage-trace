@@ -5,8 +5,12 @@
 ## Setup (10 s)
 
 1. Open `http://localhost:5173` (local dev via `docker compose up`) or the public URL in `README.md`.
-2. If the screen shows *"No incident memory loaded"*, click **Initialize production demo**.
-3. The page refreshes with the cart-service incident, runbook, memory timeline, and the **Guided incident sequence** panel.
+2. Use the **Scenario** dropdown in the header to choose:
+   - **Cart / Redis latency** — the primary temporal-supersession + poison demo.
+   - **Notifications / Queue backlog** — a learned requeue procedure vs. a destructive shortcut.
+   - **Payments / PSP failure** — a policy-protected PSP failover vs. mass refund.
+3. If the screen shows *"No incident memory loaded"*, click **Initialize production demo** (or the button that matches the selected scenario).
+4. The page refreshes with the chosen incident, runbook, memory timeline, and the **Guided incident sequence** panel.
 
 ## Story (30 s)
 
