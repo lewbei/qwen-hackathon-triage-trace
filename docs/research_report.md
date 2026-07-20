@@ -83,16 +83,16 @@ TriageTrace already implements this: every remediation is a **proposal** pending
 
 **Current TriageTrace evidence:**
 
-- Uses Qwen Cloud `qwen3.7-plus` for reasoning, `text-embedding-v4` for memory vectors, with `text-embedding-v3` quota fallback and slots for `qwen3-rerank` and `qwen3.6-flash` extraction.
+- Uses Qwen Cloud `qwen3.7-plus` for reasoning, `text-embedding-v4` for memory vectors, `text-embedding-v3` as the embedding quota fallback, and `qwen3-rerank` as the primary relevance reranker.
 - Implements vector retrieval → rerank fallback → utility-weighted scoring → MMR diversity → 800-token packing.
 - MemoryGate validates memories before persistence against poison patterns and active policies.
 - Full FastAPI + SQLAlchemy/Alembic + pgvector + Docker + React + evaluation harness.
-- Committed live benchmark: 13 scenarios, **stateless 23.1% → memory 84.6%** accuracy, 100% policy compliance, 0 poison/stale recall.
+- Last live Qwen Cloud benchmark (July 17, 2026): 13 scenarios, **stateless 23.1% → memory 84.6%** accuracy, 100% policy compliance, 0 poison/stale recall. The deterministic MockQwen suite is tracked separately as regression evidence.
 
 **Gaps / opportunities to score higher:**
 
 1. **Custom Qwen skills / MCP integration.** The Qwen-Agent framework supports MCP servers and custom skills. Exposing TriageTrace's evidence tools (`inspect_metrics`, `read_current_runbook`, `apply_remediation`) as an MCP server would be a strong signal of "sophisticated Qwen Cloud use." ([Qwen-Agent MCP docs](https://qwenlm-qwen-agent.mintlify.app/guides/mcp-integration))
-2. **`qwen3-rerank` integration.** The retrieval pipeline calls the Alibaba Cloud `qwen3-rerank` endpoint (`/api/v1/services/rerank`) and automatically falls back to TF-IDF cosine similarity when the service is unavailable or rate-limited. ([Alibaba Cloud Text Rerank API](https://help.aliyun.com/en/model-studio/text-rerank-api))
+2. **Reranker calibration evidence.** The retrieval pipeline already calls Alibaba Cloud `qwen3-rerank` first, falls back to embedding cosine similarity when valid vectors exist, and finally uses deterministic BM25 lexical ranking. A published ablation comparing those three modes would make the threshold and latency trade-offs easier to evaluate. ([Alibaba Cloud Text Rerank API](https://help.aliyun.com/en/model-studio/text-rerank-api))
 3. **Async streaming status endpoint.** Incident agents feel more real-time if the dashboard polls or uses SSE for run progress.
 4. **Cache embeddings / parallelize tool calls** to show performance optimization.
 
@@ -159,7 +159,7 @@ TriageTrace already implements this: every remediation is a **proposal** pending
 ### P1 (technical depth)
 
 6. **Expose evidence tools as an MCP server** or custom Qwen skill; add a small example client.
-7. **Wire `qwen3-rerank`** for real reranking instead of cosine fallback.
+7. **Re-run the full live Qwen benchmark** after material retrieval changes and retain deterministic MockQwen results only as regression evidence.
 8. **Add async run status / SSE** so the dashboard feels real-time.
 9. **Cache embeddings** for fixtures and previously embedded memories.
 

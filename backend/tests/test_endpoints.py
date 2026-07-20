@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from starlette.requests import Request
 
 from backend.app import demo as demo_module
 from backend.app import main as main_module
@@ -128,9 +129,12 @@ async def test_delete_memory_requires_secret(db_session):
 
 
 @pytest.mark.asyncio
-async def test_run_and_decision_endpoints_enforce_tenant_isolation(db_session, monkeypatch):
-    """Run lookups and decisions only cross the default tenant without the secret."""
-    attacker = "attacker-tenant"
+@pytest.mark.parametrize("protected_tenant", ["attacker-tenant", "default"])
+async def test_run_and_decision_endpoints_enforce_tenant_isolation(
+    db_session, monkeypatch, protected_tenant
+):
+    """Public callers cannot access any run outside their signed demo tenant."""
+    attacker = protected_tenant
     run = RunRecord(
         id=uuid.uuid4(),
         tenant=attacker,
@@ -380,6 +384,8 @@ async def test_public_skill_invoke_allows_read_tools_without_secret(db_session, 
 async def test_public_search_approved_memories_cannot_override_tenant(db_session, monkeypatch):
     """Public search_approved_memories must be bound to the demo tenant cookie."""
     captured: dict[str, Any] = {}
+    demo_tenant = f"demo-{uuid.uuid4()}"
+    signed_cookie = main_module._encode_demo_tenant_cookie(demo_tenant)
 
     async def _fake_invoke_skill(session, name, arguments):
         captured["name"] = name
@@ -389,7 +395,9 @@ async def test_public_search_approved_memories_cannot_override_tenant(db_session
     monkeypatch.setattr(main_module, "invoke_skill", _fake_invoke_skill)
 
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test", cookies={"demo_tenant": "demo-test-123"}
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        cookies={"demo_tenant": signed_cookie},
     ) as client:
         response = await client.post(
             "/api/skills/search_approved_memories/invoke",
@@ -398,8 +406,48 @@ async def test_public_search_approved_memories_cannot_override_tenant(db_session
 
     assert response.status_code == 200
     assert captured["name"] == "search_approved_memories"
-    assert captured["arguments"]["tenant"] == "demo-test-123"
+    assert captured["arguments"]["tenant"] == demo_tenant
     assert captured["arguments"]["tenant"] != "attacker-tenant"
+
+
+@pytest.mark.asyncio
+async def test_forged_demo_cookie_cannot_select_or_reset_another_tenant(db_session, monkeypatch):
+    """A raw tenant id is not authentication and must be replaced with a fresh signed cookie."""
+    victim_tenant = f"demo-{uuid.uuid4()}"
+    captured: dict[str, str] = {}
+
+    async def _fake_seed(session, scenario_id, tenant):
+        captured["tenant"] = tenant
+        return {"id": scenario_id, "alert": {"tenant": tenant}}
+
+    monkeypatch.setattr(main_module, "seed_demo_scenario", _fake_seed)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        cookies={"demo_tenant": victim_tenant},
+    ) as client:
+        response = await client.post("/api/demo/setup/cart-redis-latency")
+
+    assert response.status_code == 200
+    assert captured["tenant"] != victim_tenant
+    issued_cookie = response.cookies.get("demo_tenant")
+    assert issued_cookie is not None
+    assert main_module._decode_demo_tenant_cookie(issued_cookie) == captured["tenant"]
+
+
+def test_client_ip_uses_proxy_appended_peer_not_caller_prefix():
+    """A caller-controlled first X-Forwarded-For value must not bypass rate limits."""
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "headers": [(b"x-forwarded-for", b"198.51.100.7, 203.0.113.9")],
+            "client": ("172.18.0.2", 12345),
+        }
+    )
+    assert main_module._client_ip(request) == "203.0.113.9"
 
 
 @pytest.mark.asyncio
@@ -427,6 +475,7 @@ async def test_stream_run_sets_demo_tenant_cookie(db_session, monkeypatch):
     set_cookie = response.headers.get("set-cookie", "")
     assert "demo_tenant=" in set_cookie
     assert "HttpOnly" in set_cookie
+    assert main_module._decode_demo_tenant_cookie(response.cookies.get("demo_tenant")) is not None
 
 
 @pytest.mark.asyncio

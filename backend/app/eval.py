@@ -355,6 +355,7 @@ async def run_evaluation(session: AsyncSession, scenarios: list[dict[str, Any]],
     memory_correct = sum(1 for r in memory if r["correct"])
 
     summary = {
+        "evaluation_mode": "live_qwen_cloud" if live else "deterministic_mock",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "scenarios": len(scenarios),
         "stateless_accuracy": stateless_correct / len(stateless) if stateless else 0,

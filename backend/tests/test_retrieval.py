@@ -217,7 +217,7 @@ async def test_retrieve_and_pack_retains_policies_regardless_of_relevance(db_ses
 
 @pytest.mark.asyncio
 async def test_lexical_fallback_ranks_correct_procedure_above_blue_logo_distractor(db_session):
-    """TF-IDF lexical fallback must rank the real procedure above the unrelated distractor."""
+    """BM25 lexical fallback must rank the real procedure above the unrelated distractor."""
     tenant = "test-lexical-distractor"
     scope = "notification-service"
     subject = "queue_backlog"

@@ -61,7 +61,7 @@ Results are committed to `evaluations/` and summarized below. Three test surface
 
 ### 1. Custom incident-response adversarial suite (13 scenarios)
 
-A full live Qwen adversarial evaluation on 13 hand-written scenarios (4 repeated, 3 operator-policy, 3 temporal-conflict, 2 poisoned-log, 1 irrelevant-overload):
+The last full live Qwen Cloud adversarial evaluation, run on July 17, 2026, covered 13 hand-written scenarios (4 repeated, 3 operator-policy, 3 temporal-conflict, 2 poisoned-log, 1 irrelevant-overload):
 
 | Metric | Stateless | Memory | Δ |
 |---|---|---|---|
@@ -81,6 +81,10 @@ Adversarial-memory metrics:
 | Stale-memory recalled | 0 / 3 |
 | Temporal correct rate | 3 / 3 (100%) |
 | Irrelevant correct recall | 1 / 1 (100%) |
+
+The deterministic MockQwen suite is maintained separately in
+`backend/evaluations/mock_regression.json`. It is regression evidence, not live
+model-performance evidence, and its scores are not used in the table above.
 
 Scenario highlights:
 

@@ -9,7 +9,7 @@ TriageTrace is a **temporal memory firewall for incident-response agents**. It w
 | **React Dashboard** | `frontend/src/JudgeDemo.tsx` (mounted by `App.tsx`) | Operator UI: trigger incidents, approve/reject proposals, inspect memory lens, view evaluation dashboard. |
 | **FastAPI Orchestrator** | `backend/app/main.py` | HTTP API, SSE streaming, skill registry, run lifecycle, memory CRUD. |
 | **Agent** | `backend/app/agent.py` | Runs the two-stage Qwen3.7-plus reasoning loop: tool reasoning → final proposal. Emits events for real-time streaming. |
-| **Memory Firewall** | `backend/app/memory.py` | Vector retrieval, rerank fallback, MMR diversity, utility scoring, token-budget packing, supersession, quarantine (MemoryGate). |
+| **Memory Firewall** | `backend/app/memory.py` | Vector retrieval, Qwen `qwen3-rerank`, embedding-cosine and BM25 fallbacks, MMR diversity, utility scoring, token-budget packing, supersession, quarantine (MemoryGate). |
 | **Custom Skills** | `backend/app/skills.py` | OpenAI-compatible tool definitions for evidence tools plus memory search/lesson skills. |
 | **Qwen Client** | `backend/app/qwen.py` | Thin OpenAI-compatible client over Qwen Cloud for chat and `text-embedding-v4` vectors. |
 | **Evaluation Harness** | `backend/app/eval.py` + `backend/scripts/evaluate.py` | Deterministic mock and live Qwen evaluation with adversarial metrics. |
@@ -19,7 +19,7 @@ TriageTrace is a **temporal memory firewall for incident-response agents**. It w
 
 1. `POST /api/agent/runs` (or `/api/agent/runs/stream`) receives an `Alert`.
 2. `agent.py` embeds the alert and calls `memory.retrieve_and_pack`.
-3. `memory.py` searches the vector index, reranks, scores utility, applies MMR, and packs under `MEMORY_TOKEN_BUDGET`.
+3. `memory.py` searches the vector index, uses Qwen `qwen3-rerank` as the primary relevance scorer, falls back to embedding cosine and then deterministic BM25 when required, scores utility, applies MMR, and packs under `MEMORY_TOKEN_BUDGET`.
 4. The agent invokes evidence tools (`inspect_metrics`, `read_current_runbook`, etc.).
 5. Qwen3.7-plus produces an `ActionProposal` with `approval_required: true`.
 6. `POST /api/proposals/{id}/decision` records operator approval/rejection and writes a simulated-safe memory.
@@ -47,6 +47,7 @@ active
 ## Key design decisions
 
 - **No autonomous execution:** every remediation is a proposal awaiting operator approval.
+- **Signed public tenancy:** unauthenticated browser sessions receive an HMAC-signed, server-generated demo-tenant cookie; request bodies and unsigned tenant cookies cannot select another tenant.
 - **Provenance-first trust:** `operator` and `approved_execution` provenance bypass heuristic poison checks because they are approved human or gated outputs.
 - **Policy packing priority:** active `policy` memories are packed before `preference`/`procedure` memories so the model sees governance constraints first.
 - **Token budget enforcement:** memory context is strictly bounded, with omitted and rejected memories reported for audit.

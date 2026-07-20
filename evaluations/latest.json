@@ -1,4 +1,5 @@
 {
+  "evaluation_mode": "live_qwen_cloud",
   "timestamp": "2026-07-17T02:19:40.670554+00:00",
   "scenarios": 13,
   "stateless_accuracy": 0.23076923076923078,

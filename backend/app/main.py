@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import json
+import secrets
 from datetime import datetime
 from enum import Enum
 from typing import Any
@@ -65,12 +68,15 @@ class _DemoRateLimiter:
 
 _write_limiter = _DemoRateLimiter(max_requests=5, window_seconds=60)
 _read_limiter = _DemoRateLimiter(max_requests=60, window_seconds=60)
+_EPHEMERAL_DEMO_COOKIE_SECRET = secrets.token_bytes(32)
 
 
 def _client_ip(request: Request) -> str:
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
-        return forwarded.split(",")[0].strip()
+        # Use the last proxy-supplied hop defensively. The production nginx
+        # configuration replaces caller-controlled forwarding headers entirely.
+        return forwarded.split(",")[-1].strip()
     return request.client.host or "unknown"
 
 
@@ -79,21 +85,71 @@ def _is_authenticated(secret: str) -> bool:
     return bool(settings.demo_secret and secret == settings.demo_secret)
 
 
+def _demo_cookie_secret() -> bytes:
+    """Return the signing key used for public demo tenant cookies.
+
+    Alibaba deployment always configures ``DEMO_SECRET``. Development without a
+    configured secret uses a process-local key, which is still non-forgeable but
+    intentionally invalidates cookies after a restart.
+    """
+    if settings.demo_secret:
+        return settings.demo_secret.encode("utf-8")
+    return _EPHEMERAL_DEMO_COOKIE_SECRET
+
+
+def _valid_demo_tenant(tenant: str) -> bool:
+    if not tenant.startswith("demo-"):
+        return False
+    try:
+        UUID(tenant.removeprefix("demo-"))
+    except ValueError:
+        return False
+    return True
+
+
+def _encode_demo_tenant_cookie(tenant: str) -> str:
+    if not _valid_demo_tenant(tenant):
+        raise ValueError("Invalid demo tenant")
+    signature = hmac.new(_demo_cookie_secret(), tenant.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"{tenant}.{signature}"
+
+
+def _decode_demo_tenant_cookie(cookie: str | None) -> str | None:
+    if not cookie:
+        return None
+    tenant, separator, supplied_signature = cookie.rpartition(".")
+    if not separator or not _valid_demo_tenant(tenant):
+        return None
+    expected_signature = hmac.new(
+        _demo_cookie_secret(), tenant.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
+    if not hmac.compare_digest(supplied_signature, expected_signature):
+        return None
+    return tenant
+
+
+def _set_demo_tenant_cookie(response: Response, tenant: str) -> None:
+    response.set_cookie(
+        key="demo_tenant",
+        value=_encode_demo_tenant_cookie(tenant),
+        httponly=True,
+        samesite="lax",
+        path="/",
+    )
+
+
 def _public_tenant(request: Request, response: Response) -> str:
-    """Return the per-browser demo tenant, creating it and setting a cookie if absent."""
-    cookie = request.cookies.get("demo_tenant")
-    if cookie and cookie.startswith("demo-"):
-        return cookie
+    """Return the signed per-browser demo tenant, replacing forged cookies."""
+    tenant = _decode_demo_tenant_cookie(request.cookies.get("demo_tenant"))
+    if tenant:
+        return tenant
     tenant = _scenario_tenant()
-    response.set_cookie(key="demo_tenant", value=tenant, httponly=True, samesite="lax", path="/")
+    _set_demo_tenant_cookie(response, tenant)
     return tenant
 
 
 def _read_demo_tenant(request: Request) -> str | None:
-    cookie = request.cookies.get("demo_tenant")
-    if cookie and cookie.startswith("demo-"):
-        return cookie
-    return None
+    return _decode_demo_tenant_cookie(request.cookies.get("demo_tenant"))
 
 
 def _resolve_tenant(requested: str, secret: str, request: Request, response: Response) -> str:
@@ -262,7 +318,7 @@ async def stream_run(
         resolved_tenant = demo_tenant
     alert.tenant = resolved_tenant
     stream = StreamingResponse(_stream_run(alert, mode), media_type="text/event-stream")
-    stream.set_cookie(key="demo_tenant", value=demo_tenant, httponly=True, samesite="lax", path="/")
+    _set_demo_tenant_cookie(stream, demo_tenant)
     return stream
 
 
@@ -277,7 +333,7 @@ async def get_run(
     if not record:
         raise HTTPException(status_code=404, detail="Run not found")
     demo_tenant = _read_demo_tenant(request)
-    if record.tenant != settings.default_tenant and record.tenant != demo_tenant and not _is_authenticated(x_demo_secret):
+    if record.tenant != demo_tenant and not _is_authenticated(x_demo_secret):
         raise HTTPException(status_code=404, detail="Run not found")
     return RunOut(
         id=record.id,
@@ -302,7 +358,7 @@ async def get_events(
     if not record:
         raise HTTPException(status_code=404, detail="Run not found")
     demo_tenant = _read_demo_tenant(request)
-    if record.tenant != settings.default_tenant and record.tenant != demo_tenant and not _is_authenticated(x_demo_secret):
+    if record.tenant != demo_tenant and not _is_authenticated(x_demo_secret):
         raise HTTPException(status_code=404, detail="Run not found")
     return {"run_id": run_id, "status": record.status, "events": record.events}
 
@@ -321,7 +377,7 @@ async def decide(
     if not record or not record.proposal:
         raise HTTPException(status_code=404, detail="Proposal not found")
     demo_tenant = _read_demo_tenant(request)
-    if record.tenant != settings.default_tenant and record.tenant != demo_tenant and not _is_authenticated(x_demo_secret):
+    if record.tenant != demo_tenant and not _is_authenticated(x_demo_secret):
         raise HTTPException(status_code=404, detail="Proposal not found")
     if record.status in ("error", "invalid"):
         raise HTTPException(status_code=400, detail=f"Cannot decide on a run with status {record.status}")
@@ -614,4 +670,3 @@ async def setup_production_demo(
         raise HTTPException(status_code=429, detail="Too many setup requests. Please wait a minute.")
     tenant = _public_tenant(request, response)
     return await seed_demo_scenario(db, "cart-redis-latency", tenant=tenant)
-
