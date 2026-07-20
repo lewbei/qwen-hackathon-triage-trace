@@ -287,6 +287,16 @@ async def _run_incident_unsafe(
         {"role": "user", "content": user},
     ]
 
+    emit(
+        "model.context",
+        {
+            "system": system,
+            "user": user,
+            "memory_lines": len(memory_lines) if memory_context else 0,
+            "total_tokens": sum(len(str(m["content"]).split()) for m in messages),
+        },
+    )
+
     first = await qwen.chat(messages=messages, tools=TOOLS, tool_choice="auto")
     emit(
         "model.reasoning",

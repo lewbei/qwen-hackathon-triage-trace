@@ -24,6 +24,7 @@ venv/
 
 # Downloaded benchmark datasets
 data/*.jsonl
+data/mab_cache/
 
 # Terraform
 **/.terraform/*

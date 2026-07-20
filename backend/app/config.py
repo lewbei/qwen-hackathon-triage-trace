@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     qwen_embedding_fallback_dimensions: int = 1024
     qwen_rerank_model: str = "qwen3-rerank"
     qwen_rerank_url: str = "https://dashscope-intl.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank"
+    qwen_timeout: float = 120.0
 
     # Optional overrides so chat and embeddings can use different endpoints/keys.
     qwen_chat_api_key: str = ""

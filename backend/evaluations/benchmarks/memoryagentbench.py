@@ -18,11 +18,18 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+CACHE_DIR = Path(
+    os.environ.get(
+        "MEMORYAGENTBENCH_CACHE",
+        Path(__file__).parent.parent.parent.parent / "data" / "mab_cache",
+    )
+)
+
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from backend.app.config import settings
-from backend.app.memory import create_memory, search_memories
+from backend.app.memory import create_memory, retrieve_and_pack
 from backend.app.models import Base, MemoryRecord
 from backend.app.qwen import qwen
 
@@ -123,6 +130,42 @@ def _answer_match(prediction: str, answers: list[str]) -> bool:
     return False
 
 
+async def _cached_fact_embeddings(sample_idx: int, facts: list[str]) -> list[list[float]]:
+    cache_file = CACHE_DIR / f"sample_{sample_idx}_facts.json"
+    if cache_file.exists():
+        data = json.loads(cache_file.read_text())
+        if data.get("facts") == facts and len(data.get("embeddings", [])) == len(facts):
+            print(f"[mab] sample {sample_idx + 1}: using cached fact embeddings", flush=True)
+            return data["embeddings"]
+    embeddings: list[list[float]] = []
+    for i in range(0, len(facts), 10):
+        chunk = facts[i : i + 10]
+        embeddings.extend(await qwen.embed(chunk, dimensions=1536))
+        if i and i % 50 == 0:
+            print(f"[mab] embedded {i}/{len(facts)} facts", flush=True)
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache_file.write_text(json.dumps({"facts": facts, "embeddings": embeddings}, default=str))
+    return embeddings
+
+
+async def _cached_question_embeddings(sample_idx: int, questions: list[str]) -> list[list[float]]:
+    cache_file = CACHE_DIR / f"sample_{sample_idx}_questions.json"
+    if cache_file.exists():
+        data = json.loads(cache_file.read_text())
+        if data.get("questions") == questions and len(data.get("embeddings", [])) == len(questions):
+            print(f"[mab] sample {sample_idx + 1}: using cached question embeddings", flush=True)
+            return data["embeddings"]
+    embeddings: list[list[float]] = []
+    for i in range(0, len(questions), 10):
+        chunk = questions[i : i + 10]
+        embeddings.extend(await qwen.embed(chunk, dimensions=1536))
+        if i and i % 50 == 0:
+            print(f"[mab] embedded questions {i}/{len(questions)}", flush=True)
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache_file.write_text(json.dumps({"questions": questions, "embeddings": embeddings}, default=str))
+    return embeddings
+
+
 async def _run_mab(
     split: str = "Conflict_Resolution",
     max_samples: int | None = None,
@@ -165,13 +208,8 @@ async def _run_mab(
 
             facts = _parse_facts(sample["context"])
             base_ts = datetime.now(timezone.utc) - timedelta(minutes=len(facts))
-            # Batch-embed facts in chunks of 10 (text-embedding-v4 limit).
-            embeddings: list[list[float]] = []
-            for i in range(0, len(facts), 10):
-                chunk = facts[i : i + 10]
-                embeddings.extend(await qwen.embed(chunk, dimensions=1536))
-                if i and i % 50 == 0:
-                    print(f"[mab] embedded {i}/{len(facts)} facts", flush=True)
+            # Load or compute fact embeddings; cache them so re-runs do not re-call Qwen.
+            embeddings = await _cached_fact_embeddings(sample_idx, facts)
             print(f"[mab] embedded {len(facts)} facts; inserting", flush=True)
             # Insert facts as memories; increasing source_timestamp models arrival order.
             for idx, (fact, emb) in enumerate(zip(facts, embeddings)):
@@ -198,32 +236,34 @@ async def _run_mab(
                 questions = questions[:max_questions_per_sample]
                 answers = answers[:max_questions_per_sample]
 
-            # Batch-embed all questions for this sample (10 at a time).
-            question_embeddings: list[list[float]] = []
-            for i in range(0, len(questions), 10):
-                chunk = questions[i : i + 10]
-                question_embeddings.extend(await qwen.embed(chunk, dimensions=1536))
-                if i and i % 50 == 0:
-                    print(f"[mab] embedded questions {i}/{len(questions)}", flush=True)
+            # Load or compute question embeddings from cache.
+            question_embeddings = await _cached_question_embeddings(sample_idx, questions)
 
             # Build prompts sequentially (DB lookup), then run LLM calls in parallel.
-            prompts: list[tuple[int, str, list[str]]] = []
+            prompts: list[tuple[int, str, list[str], int]] = []
             for q_idx, (q, ans_list, q_emb) in enumerate(zip(questions, answers, question_embeddings)):
                 if q_idx and q_idx % 20 == 0:
                     print(f"[mab] retrieved question {q_idx}/{len(questions)}", flush=True)
-                memories = await search_memories(
+                # Use the real memory firewall: vector + rerank + utility + MMR + packing.
+                packed, _omitted, _rejected, _metrics = await retrieve_and_pack(
                     session,
                     tenant=tenant,
                     scope=scope,
+                    query_text=q,
                     query_embedding=q_emb,
-                    limit=1000,
+                    budget=2000,
+                    candidate_limit=50,
+                    rerank_limit=50,
+                    mmr_k=50,
                 )
+                if _metrics["packed"] == 0:
+                    print(f"[mab] debug q{q_idx} zero packed: {_metrics}", flush=True)
                 # Present facts in chronological order so the model can identify the
                 # most recent one; include the source timestamp to make recency explicit.
-                memories.sort(key=lambda m: m.source_timestamp or datetime.min.replace(tzinfo=timezone.utc))
+                packed.sort(key=lambda m: m.source_timestamp or datetime.min.replace(tzinfo=timezone.utc))
                 context_lines = [
                     f"{i+1}. [{m.source_timestamp.isoformat() if m.source_timestamp else 'unknown'}] {m.content}"
-                    for i, m in enumerate(memories)
+                    for i, m in enumerate(packed)
                 ]
                 prompt = (
                     "You are answering a multi-hop question using ONLY the provided facts.\n"
@@ -239,14 +279,18 @@ async def _run_mab(
 
             async def _answer(item: tuple[int, str, list[str], int]) -> dict[str, Any]:
                 q_idx, prompt, ans_list, recalled = item
-                async with chat_semaphore:
-                    response = await qwen.chat(
-                        messages=[{"role": "user", "content": prompt}],
-                        model=settings.qwen_reasoning_model,
-                        temperature=0.0,
-                        max_tokens=256,
-                    )
-                prediction = response.get("content") or ""
+                try:
+                    async with chat_semaphore:
+                        response = await qwen.chat(
+                            messages=[{"role": "user", "content": prompt}],
+                            model=settings.qwen_reasoning_model,
+                            temperature=0.0,
+                            max_tokens=256,
+                        )
+                    prediction = response.get("content") or ""
+                except Exception as exc:
+                    print(f"[mab] question {q_idx} LLM error: {exc}", flush=True)
+                    prediction = ""
                 matched = _answer_match(prediction, ans_list)
                 return {
                     "q_idx": q_idx,

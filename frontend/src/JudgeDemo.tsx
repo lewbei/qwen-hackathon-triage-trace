@@ -1,102 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-
-interface Alert {
-  tenant: string
-  service: string
-  symptom: string
-  severity: string
-  context: string
-}
-
-interface Deployment {
-  version: string
-  time: string
-  status: string
-}
-
-interface Signal {
-  source: 'metrics' | 'logs' | 'deploy'
-  name: string
-  value: string
-  status: 'critical' | 'warning' | 'ok'
-}
-
-interface Incident {
-  id: string
-  service: string
-  title: string
-  severity: 'sev1' | 'sev2' | 'sev3'
-  alert: string
-  customerImpact: string
-  owner: string
-  constraints: string[]
-  recentChanges: string[]
-  signals: Signal[]
-}
-
-interface Memory {
-  id: string
-  tenant: string
-  provenance: string
-  source_timestamp: string
-  source_authority: number
-  type: string
-  scope: string
-  subject: string
-  predicate: string
-  content: string
-  token_count: number
-  status: string
-  supersedes_id: string | null
-}
-
-interface Proposal {
-  action: string
-  service: string
-  evidence: string
-  risk: string
-  approval_required: boolean
-  status: string
-  recalled_memory_ids?: string[]
-  insufficient_evidence?: boolean
-  error?: string
-}
-
-interface RunEvent {
-  event_type: string
-  timestamp?: string
-  payload?: Record<string, unknown>
-  latency_ms?: number | null
-  token_usage?: { prompt: number; completion: number; total: number } | null
-  model?: string | null
-}
-
-interface RunOut {
-  id: string
-  tenant: string
-  mode: 'stateless' | 'memory'
-  alert: Alert
-  events: RunEvent[]
-  proposal: Proposal | null
-  status: string
-  error?: string
-  decision?: Record<string, unknown>
-}
-
-interface DecisionResult {
-  status: string
-  outcome?: {
-    improved: boolean
-    before_score: number
-    after_score: number
-    delta: number
-    reasoning: string
-    before_metrics?: Record<string, number>
-    after_metrics?: Record<string, number>
-  }
-  memory_id?: string
-  memory_status?: string
-}
+import type { Alert, DecisionResult, Deployment, Incident, Memory, RunOut, Signal } from './types'
+import SequenceWalkthrough from './SequenceWalkthrough'
 
 const TENANT = 'default'
 const SERVICE = 'cart-service'
@@ -595,6 +499,18 @@ export default function TriageDashboard() {
                 </div>
               </div>
             </div>
+
+            <SequenceWalkthrough
+              memoryRun={memoryRun}
+              statelessRun={statelessRun}
+              memories={memories}
+              decision={decision}
+              feedback={feedback}
+              setFeedback={setFeedback}
+              deciding={deciding}
+              onApprove={() => submitDecision(true)}
+              onReject={() => submitDecision(false)}
+            />
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               <div className="lg:col-span-3 space-y-6">

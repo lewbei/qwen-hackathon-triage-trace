@@ -23,8 +23,8 @@ class QwenGateway:
         chat_base = settings.qwen_chat_base_url or settings.qwen_base_url
         embed_key = settings.qwen_embedding_api_key or self._api_key
         embed_base = settings.qwen_embedding_base_url or settings.qwen_base_url
-        self.chat_client = AsyncOpenAI(api_key=chat_key, base_url=chat_base, timeout=60.0)
-        self.embedding_client = AsyncOpenAI(api_key=embed_key, base_url=embed_base, timeout=60.0)
+        self.chat_client = AsyncOpenAI(api_key=chat_key, base_url=chat_base, timeout=settings.qwen_timeout)
+        self.embedding_client = AsyncOpenAI(api_key=embed_key, base_url=embed_base, timeout=settings.qwen_timeout)
 
     def _ensure_key(self) -> None:
         if not self._api_key or self._api_key == "sk-dummy":
