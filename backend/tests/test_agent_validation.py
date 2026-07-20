@@ -449,11 +449,11 @@ async def test_alert_service_and_symptom_are_redacted(db_session, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_embed_falls_back_to_v3_when_v4_unavailable():
-    """If the configured embedding model is unavailable, qwen.embed retries with the fallback model."""
+    """If the configured embedding model is unavailable, QwenGateway.embed retries with the fallback model."""
     from openai import APIError
 
     from backend.app.config import settings
-    from backend.app.qwen import qwen
+    from backend.app.qwen import QwenGateway
 
     calls: list[dict[str, Any]] = []
 
@@ -465,13 +465,14 @@ async def test_embed_falls_back_to_v3_when_v4_unavailable():
             raise err
         return type("Resp", (), {"data": [type("Item", (), {"embedding": [0.1] * dimensions})()]})()
 
-    qwen._ensure_key()
-    original = qwen.embedding_client.embeddings.create
-    qwen.embedding_client.embeddings.create = _fake_create
-    try:
-        result = await qwen.embed(["test"], dimensions=1536)
-    finally:
-        qwen.embedding_client.embeddings.create = original
+    gateway = QwenGateway(api_key="test-key")
+    gateway.embedding_client = type(
+        "FakeClient",
+        (),
+        {"embeddings": type("FakeEmbeddings", (), {"create": _fake_create})()},
+    )()
+
+    result = await gateway.embed(["test"], dimensions=1536)
 
     assert len(calls) == 2
     assert calls[0]["model"] == settings.qwen_embedding_model
