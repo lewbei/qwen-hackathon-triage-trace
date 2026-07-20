@@ -2,7 +2,7 @@
 
 ## One-line pitch
 
-TriageTrace is a **temporal memory firewall** for Qwen-powered incident-response agents. It lets on-call teams accumulate approved remediation procedures across sessions, automatically supersede stale runbooks, and quarantine poisoned or policy-violating instructions before the agent ever proposes them.
+TriageTrace is a **temporal memory firewall** for Qwen-powered incident-response agents. It lets on-call teams accumulate approved remediation procedures across sessions, automatically supersede stale runbooks, and quarantine explicit poisoned or policy-violating instructions before the agent ever proposes them. Obfuscated adversarial content remains an open weakness.
 
 ## What the demo shows
 
@@ -54,3 +54,7 @@ curl -s http://localhost/api/health
 
 - **Primary track:** Track 1 — MemoryAgent.
 - **Core safety claims:** human approval gate, memory-driven reasoning, poison quarantine, temporal supersession.
+
+## Security benchmark note
+
+The ASB memory-poisoning gate evaluation shows 54/100 attacks quarantined with 0/20 false positives (100% precision). The result demonstrates reliable blocking of explicit poison patterns, while highly obfuscated or non-aggressive adversarial instructions remain an open weakness.

@@ -82,7 +82,7 @@ Scenario highlights:
 - **Repeated incidents**: stateless often returns generic or unsafe restarts; memory recalls approved-and-simulated procedures and produces the exact remediation.
 - **Operator-policy**: memory mode recalls operator constraints (e.g., never restart the database, never auto-refund) and produces compliant remediations, while the stateless baseline often lacks that context and either declines or proposes an action that may violate policy.
 - **Temporal conflict**: memory mode selects the newer simulated-safe procedure/runbook and supersedes stale entries; stale-memory recall is 0%.
-- **Poisoned log**: MemoryGate quarantines malicious instructions embedded in logs; the agent declines or recalls the safe simulated-safe procedure instead.
+- **Poisoned log**: MemoryGate quarantines explicit malicious instructions embedded in logs; the safe simulated-safe procedure is recalled instead. Obfuscated or highly indirect attacks remain an open weakness.
 - **Irrelevant overload**: despite five irrelevant observations seeded in the same scope, the correct procedure is recalled and the agent stays on target.
 
 Run:
@@ -107,7 +107,7 @@ Results (committed to `evaluations/asb_memorygate.json`):
 | F1 | 0.70 |
 | Accuracy | 61.7% |
 
-The zero false-positive rate is the critical result: MemoryGate never blocks a legitimate tool on this sample. The remaining false negatives are highly obfuscated, non-aggressive attack instructions that currently evade the LLM fallback.
+The zero false-positive rate is the critical result: on this sample, MemoryGate does not block any legitimate tool. The remaining false negatives are highly obfuscated, non-aggressive attack instructions that the current LLM-based screen does not catch. This shows the gate reliably rejects explicit poison patterns, but obfuscated adversarial content remains an open weakness.
 
 Run:
 

@@ -31,7 +31,7 @@ Metrics: correct-action accuracy, policy compliance, latency, tokens, poison/sta
 || F1 | 0.70 |
 || Accuracy | 61.7% |
 
-Zero false positives on normal tools is the key result; the false negatives are mostly low-aggression, stealth attack instructions.
+Zero false positives on normal tools is the key result. The result demonstrates reliable blocking of explicit poison patterns, while the missed attacks are mostly low-aggression, stealth instructions that the current screen does not catch. Obfuscated adversarial content remains an open weakness.
 
 3. **MemoryAgentBench conflict-resolution pilot** (`backend/evaluations/benchmarks/memoryagentbench.py`):
 
